@@ -5,21 +5,19 @@ use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 use tokio_rustls::TlsConnector;
 use tokio_util::sync::CancellationToken;
-use crate::common::args::Args;
+use crate::config::config_handler::read_config;
 use crate::tunnel::control::tunnel_client_control;
 use crate::tunnel::model::{Flags, Shared, TunnelStream};
 
 mod common;
 mod tunnel;
 mod message;
+mod config;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
   let _ = dotenv::dotenv();
-  let args = Args::parse();
-
-  //  TODO env
-  //  TODO REPL input support
+  let config = read_config()?;
 
   let mut root_cert_store = rustls::RootCertStore::empty();
   for cert in rustls_native_certs::load_native_certs().expect("unable to load certifications") {
@@ -33,22 +31,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>
 
   let tls_connector = TlsConnector::from(Arc::new(tls_config.clone()));
 
-  let host = format!("{}:{}", args.host_addr, args.host_port);
-
-  let tcp_stream = TcpStream::connect(host.as_str()).await?;
+  let tcp_stream = TcpStream::connect(config.tunnel_host).await?;
   let tunnel_server_addr = tcp_stream.peer_addr()?;
-  let tls_stream = tls_connector.connect(ServerName::try_from(host)?, tcp_stream).await?;
+  let tls_stream = tls_connector.connect(
+    ServerName::try_from(config.tunnel_host.to_string())?,
+    tcp_stream
+  ).await?;
 
   let cancellation_token = CancellationToken::new();
   
   let shared = Arc::new(Shared {
     tls_config,
-    service_addr: format!("{}:{}", args.service_addr, args.service_port)
+    service_addr: config.tunnel_service
   });
   
   tunnel_client_control(
     Flags {
-      global_cancellation_token: CancellationToken::new(),
+      global_cancellation_token: cancellation_token.clone(),
       local_cancellation_token: CancellationToken::new(),
     },
     shared.clone(),

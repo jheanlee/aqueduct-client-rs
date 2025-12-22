@@ -12,7 +12,7 @@ pub struct Flags {
 
 pub struct Shared {
   pub tls_config: rustls::ClientConfig,
-  pub service_addr: String
+  pub service_addr: SocketAddr
 }
 
 pub struct TunnelStream {
