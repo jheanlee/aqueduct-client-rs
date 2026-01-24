@@ -7,7 +7,7 @@ use tokio::sync::mpsc;
 use tokio_rustls::client::TlsStream;
 use tokio_rustls::TlsConnector;
 use tokio_util::task::JoinMap;
-use crate::message::message::{Message, MessageType};
+use crate::message::message::{Message, MessageType, ProxyMessage};
 use crate::tunnel::error::TunnelError;
 use crate::tunnel::io::send_message;
 use crate::tunnel::model::{Flags, Shared, TunnelStream};
@@ -18,7 +18,6 @@ pub async fn tunnel_proxy_control (
   shared: Arc<Shared>,
   tunnel_server: Arc<TunnelStream>,
   mut redirect_id_rx: mpsc::Receiver<String>,
-  mut abort_rx: mpsc::Receiver<String>
 ) {
   let mut proxy_threads = JoinMap::new();
 
@@ -37,12 +36,6 @@ pub async fn tunnel_proxy_control (
               )
             );
           }
-          None => {}
-        }
-      }
-      abort_id = abort_rx.recv() => {
-        match abort_id {
-          Some(abort_id) => { proxy_threads.abort(&abort_id); }
           None => {}
         }
       }
@@ -66,8 +59,7 @@ pub async fn tunnel_proxy_session (
 ) {
 
   let service_connect_future = async {
-    let tls_connector = TlsConnector::from(Arc::new(shared.tls_config.clone()));
-    let tcp_stream = TcpStream::connect(tunnel_server.addr).await?;
+    let tcp_stream = TcpStream::connect((shared.config.tunnel_service.to_str().to_string(), shared.config.tunnel_service_port)).await?;
     Ok::<TcpStream, TunnelError>(tcp_stream)
   };
 
@@ -75,7 +67,7 @@ pub async fn tunnel_proxy_session (
     let tls_connector = TlsConnector::from(Arc::new(shared.tls_config.clone()));
     let tcp_stream = TcpStream::connect(tunnel_server.addr).await?;
     let tls_stream = tls_connector.connect(
-      ServerName::try_from(tunnel_server.addr.to_string())?, //  TODO test
+      ServerName::try_from(tunnel_server.addr.ip().to_string())?,
       tcp_stream
     ).await?;
     Ok::<TlsStream<TcpStream>, TunnelError>(tls_stream)
@@ -86,7 +78,12 @@ pub async fn tunnel_proxy_session (
 
   match server_proxy_stream {
     Ok(mut tunnel_server_stream) => {
-      let message = Message::new(MessageType::Proxy, redirect_id);
+      let message = Message::new(
+        MessageType::Proxy,
+        serde_json::to_string(&ProxyMessage {
+          proxy_id: redirect_id
+        }).unwrap_or_else(|_| { unreachable!() })
+      );
       match send_message(&mut tunnel_server_stream, &message).await {
         Ok(_) => {},
         Err(error) => {

@@ -3,6 +3,7 @@ use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 use tokio_rustls::client::TlsStream;
 use tokio_util::sync::CancellationToken;
+use crate::config::config_handler::Config;
 
 #[derive(Clone)]
 pub struct Flags {
@@ -12,7 +13,7 @@ pub struct Flags {
 
 pub struct Shared {
   pub tls_config: rustls::ClientConfig,
-  pub service_addr: SocketAddr
+  pub config: Config
 }
 
 pub struct TunnelStream {

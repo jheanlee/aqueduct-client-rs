@@ -1,6 +1,4 @@
 use std::sync::Arc;
-use clap::Parser;
-use rustls::pki_types::ServerName;
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 use tokio_rustls::TlsConnector;
@@ -8,7 +6,6 @@ use tokio_util::sync::CancellationToken;
 use crate::config::config_handler::read_config;
 use crate::tunnel::control::tunnel_client_control;
 use crate::tunnel::model::{Flags, Shared, TunnelStream};
-
 mod common;
 mod tunnel;
 mod message;
@@ -20,7 +17,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>
   let config = read_config()?;
 
   let mut root_cert_store = rustls::RootCertStore::empty();
-  for cert in rustls_native_certs::load_native_certs().expect("unable to load certifications") {
+  for cert in rustls_native_certs::load_native_certs().expect("unable to load certificates") {
     root_cert_store.add(cert).unwrap();
   }
 
@@ -31,18 +28,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>
 
   let tls_connector = TlsConnector::from(Arc::new(tls_config.clone()));
 
-  let tcp_stream = TcpStream::connect(config.tunnel_host).await?;
+  let tcp_stream = TcpStream::connect((config.tunnel_host.to_str().to_string(), config.tunnel_host_port)).await
+    .expect("Unable to connect to server");
   let tunnel_server_addr = tcp_stream.peer_addr()?;
   let tls_stream = tls_connector.connect(
-    ServerName::try_from(config.tunnel_host.to_string())?,
+    config.tunnel_host.clone(),
     tcp_stream
-  ).await?;
+  ).await.expect("Unable to connect to server");
 
   let cancellation_token = CancellationToken::new();
   
   let shared = Arc::new(Shared {
     tls_config,
-    service_addr: config.tunnel_service
+    config,
   });
   
   tunnel_client_control(

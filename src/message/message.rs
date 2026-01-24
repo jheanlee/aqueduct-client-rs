@@ -101,18 +101,18 @@ impl Message {
   }
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub struct ServiceMessage {
   pub auth: ServiceAuth,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub enum ServiceAuth {
   Token { token: String },
   Password { username: String, password: String }
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub struct ProxyMessage {
   pub proxy_id: String,
 }

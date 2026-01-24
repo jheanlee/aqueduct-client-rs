@@ -2,7 +2,9 @@
 pub enum ConfigError {
   AddrParseError(std::net::AddrParseError),
   ParseIntError(std::num::ParseIntError),
-  RequiredFieldEmpty((String, String))
+  InvalidDNSName,
+  RequiredFieldEmpty((String, String)),
+  InvalidValue((String, String))
 }
 
 impl std::fmt::Display for ConfigError {
@@ -10,7 +12,9 @@ impl std::fmt::Display for ConfigError {
     match self {
       ConfigError::AddrParseError(_) => write!(f, "invalid address format"),
       ConfigError::ParseIntError(error) => write!(f, "{error}"),
-      ConfigError::RequiredFieldEmpty((arg_name, env_name)) => write!(f, "required field must be set: `--{arg_name}` or environment variable `{env_name}`")
+      ConfigError::InvalidDNSName => write!(f, "invalid DNS name"),
+      ConfigError::RequiredFieldEmpty((arg_name, env_name)) => write!(f, "required field must be set: `--{arg_name}` or environment variable `{env_name}`"),
+      ConfigError::InvalidValue((arg_name, env_name)) => write!(f, "invalid value: `{arg_name}` or environment variable `{env_name}`")
     }
   }
 }

@@ -1,9 +1,7 @@
-use std::net::SocketAddr;
-
 #[derive(clap::Parser)]
 pub struct Args {
-  pub host: Option<SocketAddr>,
-  pub service: Option<SocketAddr>,
+  pub host: Option<String>,
+  pub service: Option<String>,
   #[arg(short, long)]
   pub username: Option<String>,
   #[arg(short, long)]
