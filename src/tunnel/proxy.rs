@@ -165,7 +165,7 @@ pub async fn tunnel_proxy_session(
                                 //  service -> tunnel_server (external_client)
                                 match service_server_read {
                                     Ok(bytes_read) => {
-                                        let write_result = tunnel_server_stream.write_all(&tunnel_buffer[..bytes_read]).await;
+                                        let write_result = tunnel_server_stream.write_all(&service_buffer[..bytes_read]).await;
                                         if let Err(error) = write_result {
                                             log(
                                                 Level::Debug,
