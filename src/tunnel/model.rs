@@ -1,22 +1,22 @@
+use crate::config::config_handler::Config;
 use std::net::SocketAddr;
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 use tokio_rustls::client::TlsStream;
 use tokio_util::sync::CancellationToken;
-use crate::config::config_handler::Config;
 
 #[derive(Clone)]
 pub struct Flags {
-  pub global_cancellation_token: CancellationToken,
-  pub local_cancellation_token: CancellationToken
+    pub global_cancellation_token: CancellationToken,
+    pub local_cancellation_token: CancellationToken,
 }
 
 pub struct Shared {
-  pub tls_config: rustls::ClientConfig,
-  pub config: Config
+    pub tls_config: rustls::ClientConfig,
+    pub config: Config,
 }
 
 pub struct TunnelStream {
-  pub stream: Mutex<TlsStream<TcpStream>>,
-  pub addr: SocketAddr
+    pub stream: Mutex<TlsStream<TcpStream>>,
+    pub addr: SocketAddr,
 }
