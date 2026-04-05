@@ -54,6 +54,10 @@ pub fn read_config() -> Result<Config, ConfigError> {
                 .to_string(),
         )
         .map_err(|_| ConfigError::InvalidDNSName)?;
+        config.tunnel_host_port = host_parts
+            .get(1)
+            .unwrap_or(&"30330")
+            .parse()?;
     }
     if let Ok(tunnel_service) = std::env::var("AQUEDUCT_SERVICE") {
         let service_parts: Vec<&str> = tunnel_service.splitn(2, ':').collect();
@@ -62,13 +66,17 @@ pub fn read_config() -> Result<Config, ConfigError> {
                 .get(0)
                 .ok_or_else(|| {
                     ConfigError::InvalidValue((
-                        "[service]".to_string(),
+                        "service".to_string(),
                         "AQUEDUCT_SERVICE".to_string(),
                     ))
                 })?
                 .to_string(),
         )
         .map_err(|_| ConfigError::InvalidDNSName)?;
+        config.tunnel_service_port = service_parts
+            .get(1)
+            .unwrap_or(&"80")
+            .parse()?;
     }
     if let Ok(tunnel_username) = std::env::var("AQUEDUCT_USERNAME") {
         config.tunnel_username = Some(tunnel_username);
@@ -102,21 +110,29 @@ pub fn read_config() -> Result<Config, ConfigError> {
                 .to_string(),
         )
         .map_err(|_| ConfigError::InvalidDNSName)?;
+        config.tunnel_host_port = host_parts
+            .get(1)
+            .unwrap_or(&"30330")
+            .parse()?;
     }
     if let Some(tunnel_service) = args.service {
         let service_parts: Vec<&str> = tunnel_service.splitn(2, ':').collect();
         config.tunnel_service = ServerName::try_from(
             service_parts
                 .get(0)
-                .ok_or_else(|| {
-                    ConfigError::InvalidValue((
-                        "[service]".to_string(),
-                        "AQUEDUCT_SERVICE".to_string(),
-                    ))
-                })?
+                .unwrap_or(&"80")
                 .to_string(),
         )
         .map_err(|_| ConfigError::InvalidDNSName)?;
+        config.tunnel_service_port = service_parts
+            .get(1)
+            .ok_or_else(|| {
+                ConfigError::InvalidValue((
+                    "service-port".to_string(),
+                    "AQUEDUCT_SERVICE_PORT".to_string(),
+                ))
+            })?
+            .parse()?;
     }
     if let Some(tunnel_username) = args.username {
         config.tunnel_username = Some(tunnel_username);
