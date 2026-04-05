@@ -1,20 +1,39 @@
+use crate::common::log::{Level, LogConfig};
 use crate::config::config_handler::read_config;
 use crate::tunnel::control::tunnel_client_control;
-use crate::tunnel::model::{Flags, Shared, TunnelStream};
-use std::sync::Arc;
+use crate::tunnel::model::{Flags, Shared, TunnelConfig, TunnelStream};
+use std::ops::DerefMut;
+use std::sync::{Arc, LazyLock};
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 use tokio_rustls::TlsConnector;
 use tokio_util::sync::CancellationToken;
+
 mod common;
 mod config;
 mod message;
 mod tunnel;
 
+static LOG_CONFIG: LazyLock<Mutex<LogConfig>> = LazyLock::new(|| {
+    Mutex::new(LogConfig {
+        stdout_filter: Level::Info.into(),
+        system_filter: Level::Notice.into(),
+        stdout_enabled: true,
+        syslog_enabled: false,
+        oslog_enabled: false,
+    })
+});
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
     let _ = dotenv::dotenv();
     let config = read_config()?;
+
+    //  log
+    {
+        let mut log_config = LOG_CONFIG.lock().await;
+        *log_config.deref_mut() = config.log_config;
+    }
 
     let mut root_cert_store = rustls::RootCertStore::empty();
     for cert in rustls_native_certs::load_native_certs().expect("unable to load certificates") {
@@ -43,7 +62,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>
 
     let cancellation_token = CancellationToken::new();
 
-    let shared = Arc::new(Shared { tls_config, config });
+    let shared = Arc::new(Shared {
+        tls_config,
+        config: TunnelConfig {
+            tunnel_host: config.tunnel_host,
+            tunnel_host_port: config.tunnel_host_port,
+            tunnel_service: config.tunnel_service,
+            tunnel_service_port: config.tunnel_service_port,
+            tunnel_username: config.tunnel_username,
+            tunnel_password: config.tunnel_password,
+            tunnel_token: config.tunnel_token,
+        },
+    });
 
     tunnel_client_control(
         Flags {

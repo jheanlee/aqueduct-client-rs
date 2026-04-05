@@ -2,9 +2,11 @@
 pub enum ConfigError {
     AddrParseError(std::net::AddrParseError),
     ParseIntError(std::num::ParseIntError),
+    ParseBoolError(std::str::ParseBoolError),
     InvalidDNSName,
     RequiredFieldEmpty((String, String)),
     InvalidValue((String, String)),
+    LogInitError(crate::common::log::Error),
 }
 
 impl std::fmt::Display for ConfigError {
@@ -12,6 +14,7 @@ impl std::fmt::Display for ConfigError {
         match self {
             ConfigError::AddrParseError(_) => write!(f, "invalid address format"),
             ConfigError::ParseIntError(error) => write!(f, "{error}"),
+            ConfigError::ParseBoolError(error) => write!(f, "{error}"),
             ConfigError::InvalidDNSName => write!(f, "invalid DNS name"),
             ConfigError::RequiredFieldEmpty((arg_name, env_name)) => write!(
                 f,
@@ -21,6 +24,7 @@ impl std::fmt::Display for ConfigError {
                 f,
                 "invalid value: `{arg_name}` or environment variable `{env_name}`"
             ),
+            ConfigError::LogInitError(error) => write!(f, "{error}"),
         }
     }
 }
@@ -36,5 +40,17 @@ impl From<std::net::AddrParseError> for ConfigError {
 impl From<std::num::ParseIntError> for ConfigError {
     fn from(value: std::num::ParseIntError) -> Self {
         ConfigError::ParseIntError(value)
+    }
+}
+
+impl From<std::str::ParseBoolError> for ConfigError {
+    fn from(value: std::str::ParseBoolError) -> Self {
+        ConfigError::ParseBoolError(value)
+    }
+}
+
+impl From<crate::common::log::Error> for ConfigError {
+    fn from(value: crate::common::log::Error) -> Self {
+        ConfigError::LogInitError(value)
     }
 }

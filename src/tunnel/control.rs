@@ -1,5 +1,7 @@
+use crate::common::log::{Level, log};
 use crate::config::config_handler::{TunnelCredential, get_credentials};
 use crate::message::message::{Message, MessageType, ServiceAuth, ServiceMessage};
+use crate::tunnel::io;
 use crate::tunnel::io::{read_message, send_message};
 use crate::tunnel::model::{Flags, Shared, TunnelStream};
 use crate::tunnel::proxy::tunnel_proxy_control;
@@ -44,13 +46,9 @@ pub async fn tunnel_client_control(
         );
 
         let mut guard = tunnel_server.stream.lock().await;
-        match send_message(guard.deref_mut(), &auth_message).await {
-            Ok(_) => {}
-            Err(_error) => {
-                //  TODO log
-                flags.local_cancellation_token.cancel();
-                return;
-            }
+        if let Err(error) = send_message(guard.deref_mut(), &auth_message).await {
+            error_request_send(flags.clone(), error).await;
+            return;
         }
     } else if let (Some(username), Some(password)) = (auth_username, auth_password) {
         let auth_message = Message::new(
@@ -62,13 +60,9 @@ pub async fn tunnel_client_control(
         );
 
         let mut guard = tunnel_server.stream.lock().await;
-        match send_message(guard.deref_mut(), &auth_message).await {
-            Ok(_) => {}
-            Err(_error) => {
-                //  TODO log
-                flags.local_cancellation_token.cancel();
-                return;
-            }
+        if let Err(error) = send_message(guard.deref_mut(), &auth_message).await {
+            error_request_send(flags.clone(), error).await;
+            return;
         }
     } else {
         flags.local_cancellation_token.cancel();
@@ -95,36 +89,64 @@ pub async fn tunnel_client_control(
                     Ok(message) => {
                         match message.message_type {
                             MessageType::Heartbeat => {
+                                log(Level::Debug, "Heartbeat", "tunnel_client_control").await;
                                 let heartbeat_message = Message::new(MessageType::Heartbeat, "".to_string());
                                 let mut guard = tunnel_server.stream.lock().await;
 
                                 if let Err(error) = send_message(guard.deref_mut(), &heartbeat_message).await {
-                                    //  TODO log
+                                    error_request_send(flags.clone(), error).await;
                                     flags.local_cancellation_token.cancel();
                                     break;
                                 }
-                              }
+                            }
                             MessageType::Service => {
                                 //  does not occur under normal circumstances
                                 flags.local_cancellation_token.cancel();
                                 break;
                             }
                             MessageType::Proxy => {
-                                //  TODO print proxy port
+                                log(
+                                    Level::Debug,
+                                    format!(
+                                        "Tunnel external user id received: {}",
+                                        message.message_string
+                                    )
+                                    .as_str(),
+                                    "tunnel_client_control"
+                                )
+                                .await;
                                 if let Err(error) = redirect_id_tx.send(message.message_string).await {
-                                    //  TODO log error
-                                    flags.local_cancellation_token.cancel();
+                                    error_general(flags.clone(), error).await;
                                 }
                             }
                             MessageType::Port => {
-                                //  TODO log
+                                log(
+                                    Level::Always,
+                                    format!(
+                                        "Tunnelled service is now available at {}:{}",
+                                        shared.config.tunnel_host.to_str(),
+                                        message.message_string
+                                    )
+                                    .as_str(),
+                                    "tunnel_client_control"
+                                )
+                                .await;
                             }
                             MessageType::Close => {
                                 flags.local_cancellation_token.cancel();
                                 break;
                             }
                             MessageType::Error => {
-                                //  TODO log
+                                log(
+                                    Level::Error,
+                                    format!(
+                                        "Connection with host closed with an error: {}",
+                                        message.message_string
+                                    )
+                                    .as_str(),
+                                    "tunnel::control::tunnel_client_control"
+                                )
+                                .await;
                                 flags.local_cancellation_token.cancel();
                                 break;
                             }
@@ -148,5 +170,30 @@ pub async fn tunnel_client_control(
 
     let _ = proxy_control_thread.await;
 
-    //  TODO log connection ended
+    log(
+        Level::Error,
+        "Connection with host closed",
+        "tunnel::control::tunnel_client_control",
+    )
+    .await;
+}
+
+async fn error_request_send(flags: Flags, error: io::Error) {
+    log(
+        Level::Error,
+        format!("Unable to send request to host: {:?}", error).as_str(),
+        "tunnel::control::tunnel_client_control",
+    )
+    .await;
+    flags.local_cancellation_token.cancel();
+}
+
+async fn error_general(flags: Flags, error: impl std::fmt::Debug) {
+    log(
+        Level::Error,
+        format!("An error has occurred: {:?}", error).as_str(),
+        "tunnel::control::tunnel_client_control",
+    )
+    .await;
+    flags.local_cancellation_token.cancel();
 }

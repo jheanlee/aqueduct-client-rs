@@ -1,3 +1,4 @@
+use crate::common::log::{Level, LogConfig};
 use crate::config::args::Args;
 use crate::config::error::ConfigError;
 use clap::Parser;
@@ -14,6 +15,7 @@ pub struct Config {
     pub tunnel_username: Option<String>,
     pub tunnel_password: Option<String>,
     pub tunnel_token: Option<String>,
+    pub log_config: LogConfig,
 }
 
 ///   Reads config from
@@ -29,7 +31,16 @@ pub fn read_config() -> Result<Config, ConfigError> {
         tunnel_username: None,
         tunnel_password: None,
         tunnel_token: None,
+        log_config: LogConfig {
+            stdout_filter: Level::Info.into(),
+            system_filter: Level::Notice.into(),
+            stdout_enabled: true,
+            syslog_enabled: false,
+            oslog_enabled: false,
+        },
     };
+
+    let mut config_daemon_mode = false;
 
     //  environment variable
     if let Ok(tunnel_host) = std::env::var("AQUEDUCT_HOST") {
@@ -67,6 +78,15 @@ pub fn read_config() -> Result<Config, ConfigError> {
     }
     if let Ok(tunnel_token) = std::env::var("AQUEDUCT_TOKEN") {
         config.tunnel_token = Some(tunnel_token);
+    }
+    if let Ok(daemon_mode) = std::env::var("AQUEDUCT_DAEMON") {
+        config_daemon_mode = daemon_mode.parse()?;
+    }
+    if let Ok(stdout_filter) = std::env::var("AQUEDUCT_STDOUT_FILTER") {
+        config.log_config.stdout_filter = stdout_filter.parse()?;
+    }
+    if let Ok(log_filter) = std::env::var("AQUEDUCT_LOG_FILTER") {
+        config.log_config.system_filter = log_filter.parse()?;
     }
 
     //  args
@@ -107,6 +127,23 @@ pub fn read_config() -> Result<Config, ConfigError> {
     if let Some(tunnel_token) = args.token {
         config.tunnel_token = Some(tunnel_token);
     }
+    if let Some(daemon_mode) = args.daemon {
+        config_daemon_mode = daemon_mode;
+    }
+    if let Some(stdout_filter) = args.stdout_filter {
+        config.log_config.stdout_filter = stdout_filter;
+    }
+    if let Some(log_filter) = args.log_filter {
+        config.log_config.system_filter = log_filter;
+    }
+
+    //  log config
+    crate::common::log::init(
+        config.log_config.stdout_filter,
+        config.log_config.system_filter,
+        !config_daemon_mode,
+        config_daemon_mode,
+    )?;
 
     Ok(config)
 }

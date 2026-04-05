@@ -4,6 +4,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio_rustls::client::TlsStream;
 
+#[derive(Debug)]
 pub enum Error {
     MessageError(MessageError),
     IoError(std::io::Error),

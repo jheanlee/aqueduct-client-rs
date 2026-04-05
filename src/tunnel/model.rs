@@ -1,4 +1,4 @@
-use crate::config::config_handler::Config;
+use rustls::pki_types::ServerName;
 use std::net::SocketAddr;
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
@@ -11,9 +11,19 @@ pub struct Flags {
     pub local_cancellation_token: CancellationToken,
 }
 
+pub struct TunnelConfig {
+    pub tunnel_host: ServerName<'static>,
+    pub tunnel_host_port: u16,
+    pub tunnel_service: ServerName<'static>,
+    pub tunnel_service_port: u16,
+    pub tunnel_username: Option<String>,
+    pub tunnel_password: Option<String>,
+    pub tunnel_token: Option<String>,
+}
+
 pub struct Shared {
     pub tls_config: rustls::ClientConfig,
-    pub config: Config,
+    pub config: TunnelConfig,
 }
 
 pub struct TunnelStream {
