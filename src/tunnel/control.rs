@@ -160,6 +160,9 @@ pub async fn tunnel_client_control(
                                 flags.local_cancellation_token.cancel();
                                 break;
                             }
+                            MessageType::Empty => {
+                                //  placeholder
+                            }
                             MessageType::Error => {
                                 log(
                                     Level::Error,
