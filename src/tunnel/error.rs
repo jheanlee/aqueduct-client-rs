@@ -21,7 +21,6 @@ pub enum TunnelError {
     MessageError(MessageError),
     IoError(std::io::Error),
     InvalidDnsNameError(rustls::pki_types::InvalidDnsNameError),
-    NoPortsAvailable,
 }
 
 impl std::fmt::Display for TunnelError {
@@ -30,7 +29,6 @@ impl std::fmt::Display for TunnelError {
             Self::MessageError(e) => write!(f, "MessageError: {e}"),
             Self::IoError(e) => write!(f, "IoError: {e}"),
             Self::InvalidDnsNameError(e) => write!(f, "InvalidDnsNameError: {e}"),
-            Self::NoPortsAvailable => write!(f, "no ports available"),
         }
     }
 }
