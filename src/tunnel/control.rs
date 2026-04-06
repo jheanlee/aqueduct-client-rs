@@ -100,6 +100,14 @@ pub async fn tunnel_client_control(
         };
 
         select! {
+            biased;
+            _global_cancelled = flags.global_cancellation_token.cancelled() => {
+                flags.local_cancellation_token.cancel();
+                break;
+            }
+            _local_cancelled = flags.local_cancellation_token.cancelled() => {
+                break;
+            }
             result = read_future => {
                 match result {
                     Ok(message) => {
@@ -152,6 +160,9 @@ pub async fn tunnel_client_control(
                                 flags.local_cancellation_token.cancel();
                                 break;
                             }
+                            MessageType::Empty => {
+                                //  placeholder
+                            }
                             MessageType::Error => {
                                 log(
                                     Level::Error,
@@ -173,13 +184,6 @@ pub async fn tunnel_client_control(
                         break;
                     }
                 }
-            },
-            _global_cancelled = flags.global_cancellation_token.cancelled() => {
-                flags.local_cancellation_token.cancel();
-                break;
-            }
-            _local_cancelled = flags.local_cancellation_token.cancelled() => {
-                break;
             }
         }
     }

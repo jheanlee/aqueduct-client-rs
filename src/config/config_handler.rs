@@ -173,7 +173,7 @@ pub enum TunnelCredential {
 }
 pub fn get_credentials() -> Option<TunnelCredential> {
     let token_regex = Regex::new("^AQ_[A-Za-z0-9_-]{21}$").unwrap_or_else(|_| unreachable!());
-    let mut credential = None;
+    let mut credential;
 
     let mut rl = DefaultEditor::new().ok()?;
 
@@ -218,8 +218,8 @@ pub fn get_credentials() -> Option<TunnelCredential> {
 
     match credential {
         Some(TunnelCredential::Password(_, _)) => {
-            let mut username = String::new();
-            let mut password = String::new();
+            let username;
+            let password;
             loop {
                 let line = rl.readline("Please enter your username: ");
                 let line = handle_line(line).ok()?;

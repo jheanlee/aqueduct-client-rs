@@ -41,9 +41,18 @@ pub async fn tunnel_proxy_control(
 
     loop {
         select! {
+            biased;
+            _global_cancalled = flags.global_cancellation_token.cancelled() => {
+                flags.local_cancellation_token.cancel();
+                break;
+            },
+            _client_cancealled = flags.local_cancellation_token.cancelled() => {
+                break;
+            },
             redirect_id = redirect_id_rx.recv() => {
                 let Some(redirect_id) = redirect_id else {
-                    continue;
+                    flags.local_cancellation_token.cancel();
+                    break;
                 };
                 proxy_threads.spawn(
                     redirect_id.clone(),
@@ -55,13 +64,6 @@ pub async fn tunnel_proxy_control(
                     )
                 );
             }
-            _global_cancalled = flags.global_cancellation_token.cancelled() => {
-                flags.local_cancellation_token.cancel();
-                break;
-            },
-            _client_cancealled = flags.local_cancellation_token.cancelled() => {
-                break;
-            },
         }
     }
 }
@@ -131,13 +133,11 @@ pub async fn tunnel_proxy_session(
                     let mut service_buffer = [0u8; 32768];
 
                     loop {
-                        tunnel_buffer.fill(0u8);
-                        service_buffer.fill(0u8);
-
                         select! {
                             tunnel_server_read = tunnel_server_stream.read(&mut tunnel_buffer) => {
                                 //  tunnel_server (external_client) -> service
                                 match tunnel_server_read {
+                                    Ok(0) => { break; }
                                     Ok(bytes_read) => {
                                         let write_result = service_server_stream.write_all(&tunnel_buffer[..bytes_read]).await;
                                         if let Err(error) = write_result {
@@ -180,6 +180,7 @@ pub async fn tunnel_proxy_session(
                             service_server_read = service_server_stream.read(&mut service_buffer) => {
                                 //  service -> tunnel_server (external_client)
                                 match service_server_read {
+                                    Ok(0) => { break; }
                                     Ok(bytes_read) => {
                                         let write_result = tunnel_server_stream.write_all(&service_buffer[..bytes_read]).await;
                                         if let Err(error) = write_result {

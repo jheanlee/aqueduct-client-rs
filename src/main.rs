@@ -21,7 +21,7 @@ use crate::tunnel::model::{Flags, Shared, TunnelConfig, TunnelStream};
 use std::ops::DerefMut;
 use std::sync::{Arc, LazyLock};
 use tokio::net::TcpStream;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 use tokio_rustls::TlsConnector;
 use tokio_util::sync::CancellationToken;
 
@@ -30,8 +30,8 @@ mod config;
 mod message;
 mod tunnel;
 
-static LOG_CONFIG: LazyLock<Mutex<LogConfig>> = LazyLock::new(|| {
-    Mutex::new(LogConfig {
+static LOG_CONFIG: LazyLock<RwLock<LogConfig>> = LazyLock::new(|| {
+    RwLock::new(LogConfig {
         stdout_filter: Level::Info.into(),
         system_filter: Level::Notice.into(),
         stdout_enabled: true,
@@ -47,7 +47,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>
 
     //  log
     {
-        let mut log_config = LOG_CONFIG.lock().await;
+        let mut log_config = LOG_CONFIG.write().await;
         *log_config.deref_mut() = config.log_config;
     }
 
