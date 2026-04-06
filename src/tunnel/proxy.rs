@@ -133,9 +133,6 @@ pub async fn tunnel_proxy_session(
                     let mut service_buffer = [0u8; 32768];
 
                     loop {
-                        tunnel_buffer.fill(0u8);
-                        service_buffer.fill(0u8);
-
                         select! {
                             tunnel_server_read = tunnel_server_stream.read(&mut tunnel_buffer) => {
                                 //  tunnel_server (external_client) -> service
