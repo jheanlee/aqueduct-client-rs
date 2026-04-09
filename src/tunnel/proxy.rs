@@ -129,8 +129,8 @@ pub async fn tunnel_proxy_session(
                     )
                     .await;
 
-                    let mut tunnel_buffer = [0u8; 32768];
-                    let mut service_buffer = [0u8; 32768];
+                    let mut tunnel_buffer = vec![0u8; 32768];
+                    let mut service_buffer = vec![0u8; 32768];
 
                     loop {
                         select! {

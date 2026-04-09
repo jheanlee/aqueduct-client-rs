@@ -21,7 +21,6 @@ use crate::tunnel::io;
 use crate::tunnel::io::{read_message, send_message};
 use crate::tunnel::model::{Flags, Shared, TunnelStream};
 use crate::tunnel::proxy::tunnel_proxy_control;
-use std::ops::DerefMut;
 use std::sync::Arc;
 use tokio::select;
 use tokio::sync::mpsc;
@@ -31,7 +30,7 @@ pub async fn tunnel_client_control(
     shared: Arc<Shared>,
     tunnel_server: Arc<TunnelStream>,
 ) {
-    let mut buffer = [0u8; 1024];
+    let mut buffer = vec![0u8; 1024];
     let (redirect_id_tx, redirect_id_rx) = mpsc::channel::<String>(32);
 
     //  auth
@@ -62,7 +61,7 @@ pub async fn tunnel_client_control(
         );
 
         let mut guard = tunnel_server.stream.lock().await;
-        if let Err(error) = send_message(guard.deref_mut(), &auth_message).await {
+        if let Err(error) = send_message(&mut guard, &auth_message).await {
             error_request_send(flags.clone(), error).await;
             return;
         }
@@ -76,7 +75,7 @@ pub async fn tunnel_client_control(
         );
 
         let mut guard = tunnel_server.stream.lock().await;
-        if let Err(error) = send_message(guard.deref_mut(), &auth_message).await {
+        if let Err(error) = send_message(&mut guard, &auth_message).await {
             error_request_send(flags.clone(), error).await;
             return;
         }
@@ -96,7 +95,7 @@ pub async fn tunnel_client_control(
     loop {
         let read_future = async {
             let mut guard = tunnel_server.stream.lock().await;
-            read_message(guard.deref_mut(), buffer.as_mut()).await
+            read_message(&mut guard, &mut buffer).await
         };
 
         select! {
@@ -117,7 +116,7 @@ pub async fn tunnel_client_control(
                                 let heartbeat_message = Message::new(MessageType::Heartbeat, "".to_string());
                                 let mut guard = tunnel_server.stream.lock().await;
 
-                                if let Err(error) = send_message(guard.deref_mut(), &heartbeat_message).await {
+                                if let Err(error) = send_message(&mut guard, &heartbeat_message).await {
                                     error_request_send(flags.clone(), error).await;
                                     flags.local_cancellation_token.cancel();
                                     break;

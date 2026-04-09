@@ -19,7 +19,6 @@ use crate::config::config_handler::read_config;
 use crate::tunnel::control::tunnel_client_control;
 use crate::tunnel::model::{Flags, Shared, TunnelConfig, TunnelStream};
 use crate::tunnel::tls::DisableCertVerification;
-use std::ops::DerefMut;
 use std::sync::{Arc, LazyLock};
 use tokio::net::TcpStream;
 use tokio::sync::{Mutex, RwLock};
@@ -49,7 +48,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>
     //  log
     {
         let mut log_config = LOG_CONFIG.write().await;
-        *log_config.deref_mut() = config.log_config;
+        *log_config = config.log_config;
     }
 
     let mut root_cert_store = rustls::RootCertStore::empty();
