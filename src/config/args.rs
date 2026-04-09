@@ -25,7 +25,9 @@ pub struct Args {
     #[arg(short, long)]
     pub token: Option<String>,
     #[arg(long)]
-    pub daemon: Option<bool>,
+    pub insecure_tls: bool,
+    #[arg(long)]
+    pub daemon: bool,
     #[arg(long)]
     pub stdout_filter: Option<u8>,
     #[arg(long)]

@@ -129,8 +129,8 @@ pub async fn tunnel_proxy_session(
                     )
                     .await;
 
-                    let mut tunnel_buffer = [0u8; 32768];
-                    let mut service_buffer = [0u8; 32768];
+                    let mut tunnel_buffer = vec![0u8; 32768];
+                    let mut service_buffer = vec![0u8; 32768];
 
                     loop {
                         select! {
@@ -241,14 +241,24 @@ pub async fn tunnel_proxy_session(
                     .await;
                 }
                 Err(error) => {
-                    warning_general(flags.clone(), error).await;
+                    log(
+                        Level::Warning,
+                        format!("Unable to connect to the tunnelled service: {:?}", error).as_str(),
+                        "tunnel::proxy::tunnel_proxy_session",
+                    )
+                    .await;
                     return;
                 }
             }
         }
         Err(error) => {
-            warning_general(flags.clone(), error).await;
-            return;
+            log(
+                Level::Warning,
+                format!("Unable to connect to the tunnel server: {:?}", error).as_str(),
+                "tunnel::proxy::tunnel_proxy_session",
+            )
+            .await;
+            flags.local_cancellation_token.cancel();
         }
     }
 }
@@ -257,16 +267,6 @@ async fn warning_request_send_proxy_session(flags: Flags, error: io::Error) {
     log(
         Level::Warning,
         format!("Unable to send request to host: {:?}", error).as_str(),
-        "tunnel::proxy::tunnel_proxy_session",
-    )
-    .await;
-    flags.local_cancellation_token.cancel();
-}
-
-async fn warning_general(flags: Flags, error: impl std::fmt::Debug) {
-    log(
-        Level::Warning,
-        format!("An error has occurred: {:?}", error).as_str(),
         "tunnel::proxy::tunnel_proxy_session",
     )
     .await;
