@@ -14,10 +14,11 @@
  * limitations under the License.
  */
 
-use crate::common::log::{Level, LogConfig};
+use crate::common::log::{Level, LogConfig, color_code, log};
 use crate::config::config_handler::read_config;
 use crate::tunnel::control::tunnel_client_control;
 use crate::tunnel::model::{Flags, Shared, TunnelConfig, TunnelStream};
+use crate::tunnel::tls::DisableCertVerification;
 use std::ops::DerefMut;
 use std::sync::{Arc, LazyLock};
 use tokio::net::TcpStream;
@@ -43,7 +44,7 @@ static LOG_CONFIG: LazyLock<RwLock<LogConfig>> = LazyLock::new(|| {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
     let _ = dotenv::dotenv();
-    let config = read_config()?;
+    let config = read_config().expect("ConfigError: ");
 
     //  log
     {
@@ -52,14 +53,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>
     }
 
     let mut root_cert_store = rustls::RootCertStore::empty();
-    for cert in rustls_native_certs::load_native_certs().expect("unable to load certificates") {
-        root_cert_store.add(cert).unwrap();
+    for cert in rustls_native_certs::load_native_certs().expect("Unable to load certificates") {
+        root_cert_store.add(cert)?;
     }
 
     let mut tls_config = rustls::ClientConfig::builder()
         .with_root_certificates(root_cert_store)
         .with_no_client_auth();
     tls_config.key_log = Arc::new(rustls::KeyLogFile::new());
+
+    if config.tunnel_disable_certificate_check {
+        log(Level::Always, format!("{}[Warning]{} TLS certificate check is disabled; the connection is considered insecure", color_code::YELLOW, color_code::RESET).as_str(), "core::main").await;
+        tls_config
+            .dangerous()
+            .set_certificate_verifier(Arc::new(DisableCertVerification {}));
+    }
 
     let tls_connector = TlsConnector::from(Arc::new(tls_config.clone()));
 

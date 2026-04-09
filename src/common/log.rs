@@ -73,7 +73,7 @@ impl From<Level> for u8 {
     }
 }
 
-mod color_code {
+pub mod color_code {
     pub const RESET: &str = "\x1b[0m";
     pub const RED: &str = "\x1b[31m";
     pub const YELLOW: &str = "\x1b[33m";

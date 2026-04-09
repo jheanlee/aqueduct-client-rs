@@ -19,3 +19,4 @@ mod error;
 mod io;
 pub mod model;
 mod proxy;
+pub mod tls;

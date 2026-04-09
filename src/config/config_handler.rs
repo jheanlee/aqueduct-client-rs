@@ -31,6 +31,7 @@ pub struct Config {
     pub tunnel_username: Option<String>,
     pub tunnel_password: Option<String>,
     pub tunnel_token: Option<String>,
+    pub tunnel_disable_certificate_check: bool,
     pub log_config: LogConfig,
 }
 
@@ -47,6 +48,7 @@ pub fn read_config() -> Result<Config, ConfigError> {
         tunnel_username: None,
         tunnel_password: None,
         tunnel_token: None,
+        tunnel_disable_certificate_check: false,
         log_config: LogConfig {
             stdout_filter: Level::Info.into(),
             system_filter: Level::Notice.into(),
@@ -79,7 +81,7 @@ pub fn read_config() -> Result<Config, ConfigError> {
                 .get(0)
                 .ok_or_else(|| {
                     ConfigError::InvalidValue((
-                        "service".to_string(),
+                        "[service]".to_string(),
                         "AQUEDUCT_SERVICE".to_string(),
                     ))
                 })?
@@ -125,13 +127,13 @@ pub fn read_config() -> Result<Config, ConfigError> {
     if let Some(tunnel_service) = args.service {
         let service_parts: Vec<&str> = tunnel_service.splitn(2, ':').collect();
         config.tunnel_service =
-            ServerName::try_from(service_parts.get(0).unwrap_or(&"80").to_string())
+            ServerName::try_from(service_parts.get(0).unwrap_or(&"localhost").to_string())
                 .map_err(|_| ConfigError::InvalidDNSName)?;
         config.tunnel_service_port = service_parts
             .get(1)
             .ok_or_else(|| {
                 ConfigError::InvalidValue((
-                    "service-port".to_string(),
+                    "[service-port]".to_string(),
                     "AQUEDUCT_SERVICE_PORT".to_string(),
                 ))
             })?
@@ -146,8 +148,11 @@ pub fn read_config() -> Result<Config, ConfigError> {
     if let Some(tunnel_token) = args.token {
         config.tunnel_token = Some(tunnel_token);
     }
-    if let Some(daemon_mode) = args.daemon {
-        config_daemon_mode = daemon_mode;
+    if args.insecure_tls {
+        config.tunnel_disable_certificate_check = args.insecure_tls;
+    }
+    if args.daemon {
+        config_daemon_mode = args.daemon;
     }
     if let Some(stdout_filter) = args.stdout_filter {
         config.log_config.stdout_filter = stdout_filter;
