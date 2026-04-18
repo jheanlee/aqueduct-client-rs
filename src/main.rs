@@ -14,14 +14,14 @@
  * limitations under the License.
  */
 
-use crate::common::log::{Level, LogConfig, color_code, log};
+use crate::common::log::{color_code, log, Level, LogConfig};
 use crate::config::config_handler::read_config;
 use crate::tunnel::control::tunnel_client_control;
-use crate::tunnel::model::{Flags, Shared, TunnelConfig, TunnelStream};
+use crate::tunnel::model::{Flags, Shared, TunnelConfig};
 use crate::tunnel::tls::DisableCertVerification;
 use std::sync::{Arc, LazyLock};
 use tokio::net::TcpStream;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::RwLock;
 use tokio_rustls::TlsConnector;
 use tokio_util::sync::CancellationToken;
 
@@ -104,10 +104,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>
             local_cancellation_token: CancellationToken::new(),
         },
         shared.clone(),
-        Arc::new(TunnelStream {
-            stream: Mutex::new(tls_stream),
-            addr: tunnel_server_addr,
-        }),
+        tunnel_server_addr,
+        tls_stream
     )
     .await;
 

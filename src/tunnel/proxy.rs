@@ -13,28 +13,28 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-use crate::common::log::{Level, log};
+use crate::common::log::{log, Level};
 use crate::message::message::{Message, MessageType, ProxyMessage};
 use crate::tunnel::error::TunnelError;
 use crate::tunnel::io;
 use crate::tunnel::io::send_message;
-use crate::tunnel::model::{Flags, Shared, TunnelStream};
+use crate::tunnel::model::{Flags, Shared};
 use rustls::pki_types::ServerName;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::select;
 use tokio::sync::mpsc;
-use tokio_rustls::TlsConnector;
 use tokio_rustls::client::TlsStream;
+use tokio_rustls::TlsConnector;
 use tokio_util::task::JoinMap;
 
 ///   Controls all proxy threads, connects to service for each tunnelled external user
 pub async fn tunnel_proxy_control(
     flags: Flags,
     shared: Arc<Shared>,
-    tunnel_server: Arc<TunnelStream>,
+    tunnel_server_control_addr: SocketAddr,
     mut redirect_id_rx: mpsc::Receiver<String>,
 ) {
     let mut proxy_threads = JoinMap::new();
@@ -59,7 +59,7 @@ pub async fn tunnel_proxy_control(
                     tunnel_proxy_session(
                         flags.clone(),
                         shared.clone(),
-                        tunnel_server.clone(),
+                        tunnel_server_control_addr,
                         redirect_id
                     )
                 );
@@ -71,7 +71,7 @@ pub async fn tunnel_proxy_control(
 pub async fn tunnel_proxy_session(
     flags: Flags,
     shared: Arc<Shared>,
-    tunnel_server: Arc<TunnelStream>,
+    tunnel_server_control_addr: SocketAddr,
     redirect_id: String,
 ) {
     let service_connect_future = async {
@@ -85,10 +85,10 @@ pub async fn tunnel_proxy_session(
 
     let server_connect_future = async {
         let tls_connector = TlsConnector::from(Arc::new(shared.tls_config.clone()));
-        let tcp_stream = TcpStream::connect(tunnel_server.addr).await?;
+        let tcp_stream = TcpStream::connect(tunnel_server_control_addr).await?;
         let tls_stream = tls_connector
             .connect(
-                ServerName::try_from(tunnel_server.addr.ip().to_string())?,
+                ServerName::try_from(tunnel_server_control_addr.ip().to_string())?,
                 tcp_stream,
             )
             .await?;
@@ -121,7 +121,7 @@ pub async fn tunnel_proxy_session(
                             "TCP proxying started {}:{} <=> {} (redirect id: {})",
                             shared.config.tunnel_service.to_str(),
                             shared.config.tunnel_service_port,
-                            tunnel_server.addr.to_string(),
+                            tunnel_server_control_addr.to_string(),
                             redirect_id
                         )
                         .as_str(),
@@ -147,7 +147,7 @@ pub async fn tunnel_proxy_session(
                                                     "Proxy write failed {}:{} <= {} (redirect id: {}): {:?}",
                                                     shared.config.tunnel_service.to_str(),
                                                     shared.config.tunnel_service_port,
-                                                    tunnel_server.addr.to_string(),
+                                                    tunnel_server_control_addr.to_string(),
                                                     redirect_id,
                                                     error
                                                 )
@@ -165,7 +165,7 @@ pub async fn tunnel_proxy_session(
                                                 "Proxy read failed {}:{} <= {} (redirect id: {}): {:?}",
                                                 shared.config.tunnel_service.to_str(),
                                                 shared.config.tunnel_service_port,
-                                                tunnel_server.addr.to_string(),
+                                                tunnel_server_control_addr.to_string(),
                                                 redirect_id,
                                                 error
                                             )
@@ -190,7 +190,7 @@ pub async fn tunnel_proxy_session(
                                                     "Proxy write failed {}:{} => {} (redirect id: {}): {:?}",
                                                     shared.config.tunnel_service.to_str(),
                                                     shared.config.tunnel_service_port,
-                                                    tunnel_server.addr.to_string(),
+                                                    tunnel_server_control_addr.to_string(),
                                                     redirect_id,
                                                     error
                                                 )
@@ -208,7 +208,7 @@ pub async fn tunnel_proxy_session(
                                                 "Proxy read failed {}:{} => {} (redirect id: {}): {:?}",
                                                 shared.config.tunnel_service.to_str(),
                                                 shared.config.tunnel_service_port,
-                                                tunnel_server.addr.to_string(),
+                                                tunnel_server_control_addr.to_string(),
                                                 redirect_id,
                                                 error
                                             )
@@ -232,7 +232,7 @@ pub async fn tunnel_proxy_session(
                             "TCP proxying ended {}:{} <=> {} (redirect id: {})",
                             shared.config.tunnel_service.to_str(),
                             shared.config.tunnel_service_port,
-                            tunnel_server.addr.to_string(),
+                            tunnel_server_control_addr.to_string(),
                             redirect_id
                         )
                         .as_str(),

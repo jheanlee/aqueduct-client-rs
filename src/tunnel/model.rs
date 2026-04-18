@@ -15,10 +15,6 @@
  */
 
 use rustls::pki_types::ServerName;
-use std::net::SocketAddr;
-use tokio::net::TcpStream;
-use tokio::sync::Mutex;
-use tokio_rustls::client::TlsStream;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Clone)]
@@ -40,9 +36,4 @@ pub struct TunnelConfig {
 pub struct Shared {
     pub tls_config: rustls::ClientConfig,
     pub config: TunnelConfig,
-}
-
-pub struct TunnelStream {
-    pub stream: Mutex<TlsStream<TcpStream>>,
-    pub addr: SocketAddr,
 }

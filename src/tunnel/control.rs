@@ -13,25 +13,30 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-use crate::common::log::{Level, log};
-use crate::config::config_handler::{TunnelCredential, get_credentials};
+use crate::common::log::{log, Level};
+use crate::config::config_handler::{get_credentials, TunnelCredential};
 use crate::message::message::{Message, MessageType, ServiceAuth, ServiceMessage};
 use crate::tunnel::io;
 use crate::tunnel::io::{read_message, send_message};
-use crate::tunnel::model::{Flags, Shared, TunnelStream};
+use crate::tunnel::model::{Flags, Shared};
 use crate::tunnel::proxy::tunnel_proxy_control;
+use std::net::SocketAddr;
 use std::sync::Arc;
+use tokio::net::TcpStream;
 use tokio::select;
 use tokio::sync::mpsc;
+use tokio_rustls::client::TlsStream;
 
 pub async fn tunnel_client_control(
     flags: Flags,
     shared: Arc<Shared>,
-    tunnel_server: Arc<TunnelStream>,
+    tunnel_server_control_addr: SocketAddr,
+    tunnel_server_control_stream: TlsStream<TcpStream>
 ) {
     let mut buffer = vec![0u8; 1024];
     let (redirect_id_tx, redirect_id_rx) = mpsc::channel::<String>(32);
+    
+    let (mut tunnel_server_control_rx, mut tunnel_server_control_tx) = tokio::io::split(tunnel_server_control_stream);
 
     //  auth
     let mut auth_token = shared.config.tunnel_token.clone();
@@ -60,8 +65,7 @@ pub async fn tunnel_client_control(
             .unwrap_or_else(|_| unreachable!()),
         );
 
-        let mut guard = tunnel_server.stream.lock().await;
-        if let Err(error) = send_message(&mut guard, &auth_message).await {
+        if let Err(error) = send_message(&mut tunnel_server_control_tx, &auth_message).await {
             error_request_send(flags.clone(), error).await;
             return;
         }
@@ -74,8 +78,7 @@ pub async fn tunnel_client_control(
             .unwrap_or_else(|_| unreachable!()),
         );
 
-        let mut guard = tunnel_server.stream.lock().await;
-        if let Err(error) = send_message(&mut guard, &auth_message).await {
+        if let Err(error) = send_message(&mut tunnel_server_control_tx, &auth_message).await {
             error_request_send(flags.clone(), error).await;
             return;
         }
@@ -88,14 +91,13 @@ pub async fn tunnel_client_control(
     let proxy_control_thread = tokio::spawn(tunnel_proxy_control(
         flags.clone(),
         shared.clone(),
-        tunnel_server.clone(),
+        tunnel_server_control_addr,
         redirect_id_rx,
     ));
 
     loop {
         let read_future = async {
-            let mut guard = tunnel_server.stream.lock().await;
-            read_message(&mut guard, &mut buffer).await
+            read_message(&mut tunnel_server_control_rx, &mut buffer).await
         };
 
         select! {
@@ -114,9 +116,8 @@ pub async fn tunnel_client_control(
                             MessageType::Heartbeat => {
                                 log(Level::Debug, "Heartbeat", "tunnel_client_control").await;
                                 let heartbeat_message = Message::new(MessageType::Heartbeat, "".to_string());
-                                let mut guard = tunnel_server.stream.lock().await;
 
-                                if let Err(error) = send_message(&mut guard, &heartbeat_message).await {
+                                if let Err(error) = send_message(&mut tunnel_server_control_tx, &heartbeat_message).await {
                                     error_request_send(flags.clone(), error).await;
                                     flags.local_cancellation_token.cancel();
                                     break;
