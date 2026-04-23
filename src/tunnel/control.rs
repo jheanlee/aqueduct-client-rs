@@ -202,7 +202,7 @@ pub async fn tunnel_client_control(
     }
 
     log(
-        Level::Error,
+        Level::Info,
         "Connection with host closed",
         "tunnel::control::tunnel_client_control",
     )

@@ -283,7 +283,6 @@ pub async fn tunnel_proxy_session(
                 "tunnel::proxy::tunnel_proxy_session",
             )
             .await;
-            flags.local_cancellation_token.cancel();
         }
     }
 }
