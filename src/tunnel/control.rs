@@ -14,8 +14,9 @@
  * limitations under the License.
  */
 use crate::common::log::{log, Level};
-use crate::config::config_handler::{get_credentials, TunnelCredential};
-use crate::message::message::{ClientServiceMessage, Message, MessageType, ServiceAuth, ServiceMessage};
+use crate::message::message::{
+    ClientServiceMessage, Message, MessageType, ServiceAuth, ServiceMessage,
+};
 use crate::tunnel::io;
 use crate::tunnel::io::{read_message, send_message};
 use crate::tunnel::model::{Flags, Shared};
@@ -31,30 +32,24 @@ pub async fn tunnel_client_control(
     flags: Flags,
     shared: Arc<Shared>,
     tunnel_server_control_addr: SocketAddr,
-    tunnel_server_control_stream: TlsStream<TcpStream>
+    tunnel_server_control_stream: TlsStream<TcpStream>,
 ) {
     let mut buffer = vec![0u8; 1024];
-    let (redirect_id_tx, redirect_id_rx) = mpsc::channel::<String>(32);
+    let (redirect_id_tx, redirect_id_rx) = mpsc::channel::<String>(1024);
     let mut redirect_id_rx = Some(redirect_id_rx);
-    
-    let (mut tunnel_server_control_rx, mut tunnel_server_control_tx) = tokio::io::split(tunnel_server_control_stream);
+
+    let (mut tunnel_server_control_rx, mut tunnel_server_control_tx) =
+        tokio::io::split(tunnel_server_control_stream);
 
     //  auth
-    let mut auth_token = shared.config.tunnel_token.clone();
-    let (mut auth_username, mut auth_password) = (
+    let auth_token = shared.config.tunnel_token.clone();
+    let (auth_username, auth_password) = (
         shared.config.tunnel_username.clone(),
         shared.config.tunnel_password.clone(),
     );
 
     if auth_token.is_none() && (auth_username.is_none() || auth_password.is_none()) {
-        match get_credentials() {
-            Some(TunnelCredential::Token(token)) => auth_token = Some(token),
-            Some(TunnelCredential::Password(username, password)) => {
-                auth_username = Some(username);
-                auth_password = Some(password);
-            }
-            None => return,
-        }
+        return;
     }
 
     if let Some(token) = auth_token {
@@ -68,7 +63,6 @@ pub async fn tunnel_client_control(
 
         if let Err(error) = send_message(&mut tunnel_server_control_tx, &auth_message).await {
             error_request_send(flags.clone(), error).await;
-            return;
         }
     } else if let (Some(username), Some(password)) = (auth_username, auth_password) {
         let auth_message = Message::new(
@@ -81,7 +75,6 @@ pub async fn tunnel_client_control(
 
         if let Err(error) = send_message(&mut tunnel_server_control_tx, &auth_message).await {
             error_request_send(flags.clone(), error).await;
-            return;
         }
     } else {
         flags.local_cancellation_token.cancel();
@@ -92,9 +85,7 @@ pub async fn tunnel_client_control(
     let mut proxy_control_thread = None;
 
     loop {
-        let read_future = async {
-            read_message(&mut tunnel_server_control_rx, &mut buffer).await
-        };
+        let read_future = async { read_message(&mut tunnel_server_control_rx, &mut buffer).await };
 
         select! {
             biased;

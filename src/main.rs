@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-use crate::common::log::{color_code, log, Level, LogConfig};
+use crate::common::log::{Level, LogConfig, color_code, log};
 use crate::config::config_handler::read_config;
 use crate::tunnel::control::tunnel_client_control;
 use crate::tunnel::model::{Flags, Shared, TunnelConfig};
@@ -105,7 +105,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>
         },
         shared.clone(),
         tunnel_server_addr,
-        tls_stream
+        tls_stream,
     )
     .await;
 

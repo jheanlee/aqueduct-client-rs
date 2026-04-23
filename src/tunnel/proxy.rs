@@ -19,20 +19,20 @@ use crate::tunnel::error::TunnelError;
 use crate::tunnel::io;
 use crate::tunnel::io::send_message;
 use crate::tunnel::model::{Flags, Shared};
+use base64::prelude::BASE64_STANDARD;
+use base64::Engine;
+use hmac::{Hmac, KeyInit, Mac};
 use rustls::pki_types::ServerName;
+use sha2::Sha256;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use base64::Engine;
-use base64::prelude::BASE64_STANDARD;
-use hmac::{Hmac, KeyInit, Mac};
-use sha2::Sha256;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::select;
 use tokio::sync::mpsc;
+use tokio::task::JoinSet;
 use tokio_rustls::client::TlsStream;
 use tokio_rustls::TlsConnector;
-use tokio_util::task::JoinMap;
 
 ///   Controls all proxy threads, connects to service for each tunnelled external user
 pub async fn tunnel_proxy_control(
@@ -42,7 +42,7 @@ pub async fn tunnel_proxy_control(
     tunnel_server_control_addr: SocketAddr,
     mut redirect_id_rx: mpsc::Receiver<String>,
 ) {
-    let mut proxy_threads = JoinMap::new();
+    let mut proxy_threads = JoinSet::new();
 
     loop {
         select! {
@@ -54,13 +54,13 @@ pub async fn tunnel_proxy_control(
             _client_cancealled = flags.local_cancellation_token.cancelled() => {
                 break;
             },
+            _ = proxy_threads.join_next(), if !proxy_threads.is_empty() => {},
             redirect_id = redirect_id_rx.recv() => {
                 let Some(redirect_id) = redirect_id else {
                     flags.local_cancellation_token.cancel();
                     break;
                 };
                 proxy_threads.spawn(
-                    redirect_id.clone(),
                     tunnel_proxy_session(
                         flags.clone(),
                         shared.clone(),
@@ -102,8 +102,8 @@ pub async fn tunnel_proxy_session(
         Ok::<TlsStream<TcpStream>, TunnelError>(tls_stream)
     };
 
-    let service_server_stream = service_connect_future.await;
-    let server_proxy_stream = server_connect_future.await;
+    let (service_server_stream, server_proxy_stream) =
+        tokio::join!(service_connect_future, server_connect_future);
 
     match server_proxy_stream {
         Ok(mut tunnel_server_stream) => {
@@ -118,8 +118,8 @@ pub async fn tunnel_proxy_session(
                 flags.local_cancellation_token.cancel();
                 return;
             };
-            let mut hmac: Hmac<Sha256> = Hmac::new_from_slice(secret.as_slice())
-                .expect("Hmac does not require key size");
+            let mut hmac: Hmac<Sha256> =
+                Hmac::new_from_slice(secret.as_slice()).expect("Hmac does not require key size");
             hmac.update(redirect_id.as_bytes());
             let id_hash = BASE64_STANDARD.encode(hmac.finalize().into_bytes());
 

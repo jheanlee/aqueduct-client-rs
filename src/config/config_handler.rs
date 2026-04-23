@@ -17,6 +17,7 @@
 use crate::common::log::{Level, LogConfig};
 use crate::config::args::Args;
 use crate::config::error::ConfigError;
+use crate::config::error::ConfigError::AuthenticationRequired;
 use clap::Parser;
 use regex::Regex;
 use rustls::pki_types::ServerName;
@@ -168,6 +169,19 @@ pub fn read_config() -> Result<Config, ConfigError> {
         !config_daemon_mode,
         config_daemon_mode,
     )?;
+
+    if config.tunnel_token.is_none()
+        && (config.tunnel_username.is_none() || config.tunnel_password.is_none())
+    {
+        match get_credentials() {
+            Some(TunnelCredential::Token(token)) => config.tunnel_token = Some(token),
+            Some(TunnelCredential::Password(username, password)) => {
+                config.tunnel_username = Some(username);
+                config.tunnel_password = Some(password);
+            }
+            None => Err(AuthenticationRequired)?,
+        }
+    }
 
     Ok(config)
 }

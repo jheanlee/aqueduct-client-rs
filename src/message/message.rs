@@ -141,5 +141,5 @@ pub struct ProxyMessage {
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct ClientServiceMessage {
     pub port: u16,
-    pub secret: String
+    pub secret: String,
 }
