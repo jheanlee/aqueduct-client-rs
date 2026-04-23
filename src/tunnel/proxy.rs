@@ -22,6 +22,10 @@ use crate::tunnel::model::{Flags, Shared};
 use rustls::pki_types::ServerName;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use base64::Engine;
+use base64::prelude::BASE64_STANDARD;
+use hmac::{Hmac, KeyInit, Mac};
+use sha2::Sha256;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::select;
@@ -34,6 +38,7 @@ use tokio_util::task::JoinMap;
 pub async fn tunnel_proxy_control(
     flags: Flags,
     shared: Arc<Shared>,
+    secret: String,
     tunnel_server_control_addr: SocketAddr,
     mut redirect_id_rx: mpsc::Receiver<String>,
 ) {
@@ -59,6 +64,7 @@ pub async fn tunnel_proxy_control(
                     tunnel_proxy_session(
                         flags.clone(),
                         shared.clone(),
+                        secret.clone(),
                         tunnel_server_control_addr,
                         redirect_id
                     )
@@ -71,6 +77,7 @@ pub async fn tunnel_proxy_control(
 pub async fn tunnel_proxy_session(
     flags: Flags,
     shared: Arc<Shared>,
+    secret: String,
     tunnel_server_control_addr: SocketAddr,
     redirect_id: String,
 ) {
@@ -100,10 +107,28 @@ pub async fn tunnel_proxy_session(
 
     match server_proxy_stream {
         Ok(mut tunnel_server_stream) => {
+            //  hash
+            let Ok(secret) = BASE64_STANDARD.decode(secret) else {
+                log(
+                    Level::Error,
+                    "Invalid secret",
+                    "tunnel::proxy::tunnel_proxy_session",
+                )
+                .await;
+                flags.local_cancellation_token.cancel();
+                return;
+            };
+            let mut hmac: Hmac<Sha256> = Hmac::new_from_slice(secret.as_slice())
+                .expect("Hmac does not require key size");
+            hmac.update(redirect_id.as_bytes());
+            let id_hash = BASE64_STANDARD.encode(hmac.finalize().into_bytes());
+
+            //  proxy message (claim external client)
+
             let message = Message::new(
                 MessageType::Proxy,
                 serde_json::to_string(&ProxyMessage {
-                    proxy_id: redirect_id.clone(),
+                    proxy_id: id_hash.clone(),
                 })
                 .unwrap_or_else(|_| unreachable!()),
             );

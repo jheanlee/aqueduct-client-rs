@@ -43,7 +43,7 @@ static LOG_CONFIG: LazyLock<RwLock<LogConfig>> = LazyLock::new(|| {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
     let _ = dotenv::dotenv();
-    let config = read_config().expect("ConfigError: ");
+    let config = read_config().expect("ConfigError");
 
     //  log
     {
