@@ -34,7 +34,6 @@ pub async fn tunnel_client_control(
     tunnel_server_control_addr: SocketAddr,
     tunnel_server_control_stream: TlsStream<TcpStream>,
 ) {
-    let mut buffer = vec![0u8; 1024];
     let (redirect_id_tx, redirect_id_rx) = mpsc::channel::<String>(1024);
     let mut redirect_id_rx = Some(redirect_id_rx);
 
@@ -85,7 +84,7 @@ pub async fn tunnel_client_control(
     let mut proxy_control_thread = None;
 
     loop {
-        let read_future = async { read_message(&mut tunnel_server_control_rx, &mut buffer).await };
+        let read_future = async { read_message(&mut tunnel_server_control_rx).await };
 
         select! {
             biased;

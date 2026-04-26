@@ -16,7 +16,7 @@
 
 use crate::message::error::MessageError;
 use crate::message::error::MessageError::{
-    InvalidString, InvalidType, MessageEmpty, MessageTooLong,
+    InvalidString, InvalidType, InvalidLength,
 };
 
 static MAX_MESSAGE_LEN: usize = 256;
@@ -75,7 +75,7 @@ impl Message {
             buffer.extend(self.message_string.as_bytes());
             Ok(buffer)
         } else {
-            Err(MessageTooLong)
+            Err(InvalidLength)
         }
     }
 
@@ -93,10 +93,10 @@ impl Message {
                     },
                 })
             } else {
-                Err(MessageTooLong)
+                Err(InvalidLength)
             }
         } else {
-            Err(MessageEmpty)
+            Err(InvalidLength)
         }
     }
 
@@ -114,10 +114,10 @@ impl Message {
                     },
                 })
             } else {
-                Err(MessageTooLong)
+                Err(InvalidLength)
             }
         } else {
-            Err(MessageEmpty)
+            Err(InvalidLength)
         }
     }
 }
