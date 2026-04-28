@@ -35,7 +35,9 @@ static LOG_CONFIG: LazyLock<RwLock<LogConfig>> = LazyLock::new(|| {
         stdout_filter: Level::Info.into(),
         system_filter: Level::Notice.into(),
         stdout_enabled: true,
+        #[cfg(target_os = "linux")]
         syslog_enabled: false,
+        #[cfg(target_os = "macos")]
         oslog_enabled: false,
     })
 });
@@ -89,7 +91,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>
         tls_config,
         config: TunnelConfig {
             tunnel_host: config.tunnel_host,
-            tunnel_host_port: config.tunnel_host_port,
             tunnel_service: config.tunnel_service,
             tunnel_service_port: config.tunnel_service_port,
             tunnel_username: config.tunnel_username,

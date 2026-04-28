@@ -21,7 +21,7 @@ pub enum ConfigError {
     ParseBoolError(std::str::ParseBoolError),
     InvalidDNSName,
     AuthenticationRequired,
-    RequiredFieldEmpty((String, String)),
+    // RequiredFieldEmpty((String, String)),
     InvalidValue((String, String)),
     LogInitError(crate::common::log::Error),
 }
@@ -33,10 +33,10 @@ impl std::fmt::Display for ConfigError {
             ConfigError::ParseIntError(error) => write!(f, "{error}"),
             ConfigError::ParseBoolError(error) => write!(f, "{error}"),
             ConfigError::InvalidDNSName => write!(f, "invalid DNS name"),
-            ConfigError::RequiredFieldEmpty((arg_name, env_name)) => write!(
-                f,
-                "required field must be set: `--{arg_name}` or environment variable `{env_name}`"
-            ),
+            // ConfigError::RequiredFieldEmpty((arg_name, env_name)) => write!(
+            //     f,
+            //     "required field must be set: `--{arg_name}` or environment variable `{env_name}`"
+            // ),
             ConfigError::InvalidValue((arg_name, env_name)) => write!(
                 f,
                 "invalid value: `{arg_name}` or environment variable `{env_name}`"

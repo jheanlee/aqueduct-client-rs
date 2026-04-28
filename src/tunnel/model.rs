@@ -25,7 +25,6 @@ pub struct Flags {
 
 pub struct TunnelConfig {
     pub tunnel_host: ServerName<'static>,
-    pub tunnel_host_port: u16,
     pub tunnel_service: ServerName<'static>,
     pub tunnel_service_port: u16,
     pub tunnel_username: Option<String>,

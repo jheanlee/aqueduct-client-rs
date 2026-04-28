@@ -24,14 +24,14 @@ use tokio_util::codec::LengthDelimitedCodec;
 
 #[derive(Debug)]
 pub enum Error {
-    MessageError(MessageError),
-    IoError(std::io::Error),
+    MessageError,
+    IoError,
     ClientClosed,
 }
 
 impl From<MessageError> for Error {
-    fn from(value: MessageError) -> Self {
-        Self::MessageError(value)
+    fn from(_value: MessageError) -> Self {
+        Self::MessageError
     }
 }
 
@@ -50,7 +50,7 @@ pub async fn read_message(
         Some(Ok(bytes_read)) => {
             Ok(Message::from_bytes(bytes_read.as_ref(), bytes_read.len())?)
         }
-        Some(Err(error)) => Err(Error::IoError(error)),
+        Some(Err(_)) => Err(Error::IoError),
         None => Err(Error::ClientClosed)
     }
 }
@@ -70,6 +70,6 @@ pub async fn send_message(
 
     match writer.send(Bytes::from(message_bytes)).await {
         Ok(_) => Ok(nbytes),
-        Err(error) => Err(Error::IoError(error)),
+        Err(_) => Err(Error::IoError),
     }
 }
