@@ -16,8 +16,7 @@
 
 #[derive(Debug, Copy, Clone)]
 pub enum MessageError {
-    MessageEmpty,
-    MessageTooLong,
+    InvalidLength,
     InvalidType,
     InvalidString,
 }
@@ -25,8 +24,7 @@ pub enum MessageError {
 impl std::fmt::Display for MessageError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            MessageError::MessageEmpty => write!(f, "message cannot be empty"),
-            MessageError::MessageTooLong => write!(f, "message length exceeded limit"),
+            MessageError::InvalidLength => write!(f, "invalid message length"),
             MessageError::InvalidType => write!(f, "invalid message type"),
             MessageError::InvalidString => write!(f, "invalid message string"),
         }

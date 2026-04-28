@@ -17,6 +17,7 @@
 use crate::common::log::{Level, LogConfig};
 use crate::config::args::Args;
 use crate::config::error::ConfigError;
+use crate::config::error::ConfigError::AuthenticationRequired;
 use clap::Parser;
 use regex::Regex;
 use rustls::pki_types::ServerName;
@@ -169,6 +170,19 @@ pub fn read_config() -> Result<Config, ConfigError> {
         config_daemon_mode,
     )?;
 
+    if config.tunnel_token.is_none()
+        && (config.tunnel_username.is_none() || config.tunnel_password.is_none())
+    {
+        match get_credentials() {
+            Some(TunnelCredential::Token(token)) => config.tunnel_token = Some(token),
+            Some(TunnelCredential::Password(username, password)) => {
+                config.tunnel_username = Some(username);
+                config.tunnel_password = Some(password);
+            }
+            None => Err(AuthenticationRequired)?,
+        }
+    }
+
     Ok(config)
 }
 
@@ -177,7 +191,7 @@ pub enum TunnelCredential {
     Token(String),
 }
 pub fn get_credentials() -> Option<TunnelCredential> {
-    let token_regex = Regex::new("^AQ_[A-Za-z0-9_-]{21}$").unwrap_or_else(|_| unreachable!());
+    let token_regex = Regex::new("^aq_[1-9A-HJ-NP-Za-km-z]{43,44}$").unwrap_or_else(|_| unreachable!());
     let mut credential;
 
     let mut rl = DefaultEditor::new().ok()?;
@@ -204,7 +218,7 @@ pub fn get_credentials() -> Option<TunnelCredential> {
         let line = rl.readline(
             "Please select a method to authenticate:
       1. password-based (if you have an username-password pair)
-      2. token-based (if you have a token starting with `AQ_`) \
+      2. token-based (if you have a token starting with `aq_`) \
       Select a method (1-2): ",
         );
         let line = handle_line(line).ok()?;

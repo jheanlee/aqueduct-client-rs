@@ -13,42 +13,42 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-use crate::common::log::{Level, log};
-use crate::config::config_handler::{TunnelCredential, get_credentials};
-use crate::message::message::{Message, MessageType, ServiceAuth, ServiceMessage};
+use crate::common::log::{log, Level};
+use crate::message::message::{
+    ClientServiceMessage, Message, MessageType, ServiceAuth, ServiceMessage,
+};
 use crate::tunnel::io;
 use crate::tunnel::io::{read_message, send_message};
-use crate::tunnel::model::{Flags, Shared, TunnelStream};
+use crate::tunnel::model::{Flags, Shared};
 use crate::tunnel::proxy::tunnel_proxy_control;
+use std::net::SocketAddr;
 use std::sync::Arc;
+use tokio::net::TcpStream;
 use tokio::select;
 use tokio::sync::mpsc;
+use tokio_rustls::client::TlsStream;
 
 pub async fn tunnel_client_control(
     flags: Flags,
     shared: Arc<Shared>,
-    tunnel_server: Arc<TunnelStream>,
+    tunnel_server_control_addr: SocketAddr,
+    tunnel_server_control_stream: TlsStream<TcpStream>,
 ) {
-    let mut buffer = vec![0u8; 1024];
-    let (redirect_id_tx, redirect_id_rx) = mpsc::channel::<String>(32);
+    let (redirect_id_tx, redirect_id_rx) = mpsc::channel::<String>(1024);
+    let mut redirect_id_rx = Some(redirect_id_rx);
+
+    let (mut tunnel_server_control_rx, mut tunnel_server_control_tx) =
+        tokio::io::split(tunnel_server_control_stream);
 
     //  auth
-    let mut auth_token = shared.config.tunnel_token.clone();
-    let (mut auth_username, mut auth_password) = (
+    let auth_token = shared.config.tunnel_token.clone();
+    let (auth_username, auth_password) = (
         shared.config.tunnel_username.clone(),
         shared.config.tunnel_password.clone(),
     );
 
     if auth_token.is_none() && (auth_username.is_none() || auth_password.is_none()) {
-        match get_credentials() {
-            Some(TunnelCredential::Token(token)) => auth_token = Some(token),
-            Some(TunnelCredential::Password(username, password)) => {
-                auth_username = Some(username);
-                auth_password = Some(password);
-            }
-            None => return,
-        }
+        return;
     }
 
     if let Some(token) = auth_token {
@@ -60,10 +60,8 @@ pub async fn tunnel_client_control(
             .unwrap_or_else(|_| unreachable!()),
         );
 
-        let mut guard = tunnel_server.stream.lock().await;
-        if let Err(error) = send_message(&mut guard, &auth_message).await {
+        if let Err(error) = send_message(&mut tunnel_server_control_tx, &auth_message).await {
             error_request_send(flags.clone(), error).await;
-            return;
         }
     } else if let (Some(username), Some(password)) = (auth_username, auth_password) {
         let auth_message = Message::new(
@@ -74,10 +72,8 @@ pub async fn tunnel_client_control(
             .unwrap_or_else(|_| unreachable!()),
         );
 
-        let mut guard = tunnel_server.stream.lock().await;
-        if let Err(error) = send_message(&mut guard, &auth_message).await {
+        if let Err(error) = send_message(&mut tunnel_server_control_tx, &auth_message).await {
             error_request_send(flags.clone(), error).await;
-            return;
         }
     } else {
         flags.local_cancellation_token.cancel();
@@ -85,18 +81,10 @@ pub async fn tunnel_client_control(
     }
 
     //  spawn control
-    let proxy_control_thread = tokio::spawn(tunnel_proxy_control(
-        flags.clone(),
-        shared.clone(),
-        tunnel_server.clone(),
-        redirect_id_rx,
-    ));
+    let mut proxy_control_thread = None;
 
     loop {
-        let read_future = async {
-            let mut guard = tunnel_server.stream.lock().await;
-            read_message(&mut guard, &mut buffer).await
-        };
+        let read_future = async { read_message(&mut tunnel_server_control_rx).await };
 
         select! {
             biased;
@@ -114,18 +102,43 @@ pub async fn tunnel_client_control(
                             MessageType::Heartbeat => {
                                 log(Level::Debug, "Heartbeat", "tunnel_client_control").await;
                                 let heartbeat_message = Message::new(MessageType::Heartbeat, "".to_string());
-                                let mut guard = tunnel_server.stream.lock().await;
 
-                                if let Err(error) = send_message(&mut guard, &heartbeat_message).await {
+                                if let Err(error) = send_message(&mut tunnel_server_control_tx, &heartbeat_message).await {
                                     error_request_send(flags.clone(), error).await;
                                     flags.local_cancellation_token.cancel();
                                     break;
                                 }
                             }
                             MessageType::Service => {
-                                //  does not occur under normal circumstances
-                                flags.local_cancellation_token.cancel();
-                                break;
+                                let Ok(service_message) = serde_json::from_str::<ClientServiceMessage>(message.message_string.as_str()) else {
+                                    log(Level::Warning, "Bad request from server", "tunnel_client_control").await;
+                                    break;
+                                };
+
+                                let Some(redirect_id_rx) = redirect_id_rx.take() else {
+                                    log(Level::Warning, "Bad request from server", "tunnel_client_control").await;
+                                    break;
+                                };
+
+                                log(
+                                    Level::Always,
+                                    format!(
+                                        "Tunnelled service is now available at {}:{}",
+                                        shared.config.tunnel_host.to_str(),
+                                        service_message.port
+                                    )
+                                    .as_str(),
+                                    "tunnel_client_control"
+                                )
+                                .await;
+
+                                proxy_control_thread = Some(tokio::spawn(tunnel_proxy_control(
+                                    flags.clone(),
+                                    shared.clone(),
+                                    service_message.secret,
+                                    tunnel_server_control_addr,
+                                    redirect_id_rx,
+                                )));
                             }
                             MessageType::Proxy => {
                                 log(
@@ -141,19 +154,6 @@ pub async fn tunnel_client_control(
                                 if let Err(error) = redirect_id_tx.send(message.message_string).await {
                                     error_general(flags.clone(), error).await;
                                 }
-                            }
-                            MessageType::Port => {
-                                log(
-                                    Level::Always,
-                                    format!(
-                                        "Tunnelled service is now available at {}:{}",
-                                        shared.config.tunnel_host.to_str(),
-                                        message.message_string
-                                    )
-                                    .as_str(),
-                                    "tunnel_client_control"
-                                )
-                                .await;
                             }
                             MessageType::Close => {
                                 flags.local_cancellation_token.cancel();
@@ -187,10 +187,12 @@ pub async fn tunnel_client_control(
         }
     }
 
-    let _ = proxy_control_thread.await;
+    if let Some(proxy_control_thread) = proxy_control_thread {
+        let _ = proxy_control_thread.await;
+    }
 
     log(
-        Level::Error,
+        Level::Info,
         "Connection with host closed",
         "tunnel::control::tunnel_client_control",
     )

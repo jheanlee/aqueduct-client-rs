@@ -20,6 +20,7 @@ pub enum ConfigError {
     ParseIntError(std::num::ParseIntError),
     ParseBoolError(std::str::ParseBoolError),
     InvalidDNSName,
+    AuthenticationRequired,
     RequiredFieldEmpty((String, String)),
     InvalidValue((String, String)),
     LogInitError(crate::common::log::Error),
@@ -41,6 +42,9 @@ impl std::fmt::Display for ConfigError {
                 "invalid value: `{arg_name}` or environment variable `{env_name}`"
             ),
             ConfigError::LogInitError(error) => write!(f, "{error}"),
+            ConfigError::AuthenticationRequired => {
+                write!(f, "Authentication method must be provided")
+            }
         }
     }
 }
