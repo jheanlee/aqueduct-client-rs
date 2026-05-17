@@ -23,15 +23,18 @@ use base64::prelude::BASE64_STANDARD;
 use hmac::{Hmac, KeyInit, Mac};
 use rustls::pki_types::ServerName;
 use sha2::Sha256;
+use socket2::SockRef;
+use std::io::ErrorKind;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::copy_bidirectional_with_sizes;
 use tokio::net::TcpStream;
 use tokio::select;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 use tokio_rustls::TlsConnector;
 use tokio_rustls::client::TlsStream;
+use tokio_util::future::FutureExt;
 use tracing::{debug, error, instrument, warn};
 
 ///   Controls all proxy threads, connects to service for each tunnelled external user
@@ -94,6 +97,10 @@ pub async fn tunnel_proxy_session(
             shared.config.tunnel_service_port,
         ))
         .await?;
+        let socket_ref = SockRef::from(&tcp_stream);
+        socket_ref.set_tcp_nodelay(true).unwrap_or_else(|error| {
+            warn!("Unable to configure the service connection: {:?}", error);
+        });
         Ok::<TcpStream, TunnelError>(tcp_stream)
     };
 
@@ -112,95 +119,84 @@ pub async fn tunnel_proxy_session(
     let (service_server_stream, server_proxy_stream) =
         tokio::join!(service_connect_future, server_connect_future);
 
-    match server_proxy_stream {
-        Ok(mut tunnel_server_stream) => {
-            //  hash
-            let Ok(secret) = BASE64_STANDARD.decode(secret) else {
-                error!("Received invalid secret from the server");
-                flags.local_cancellation_token.cancel();
-                return;
-            };
-            let mut hmac: Hmac<Sha256> =
-                Hmac::new_from_slice(secret.as_slice()).expect("Hmac does not require key size");
-            hmac.update(redirect_id.as_bytes());
-            let id_hash = BASE64_STANDARD.encode(hmac.finalize().into_bytes());
-
-            //  proxy message (claim external client)
-
-            let message = Message::new(
-                MessageType::Proxy,
-                serde_json::to_string(&ProxyMessage {
-                    proxy_id: id_hash.clone(),
-                })
-                .unwrap_or_else(|_| unreachable!()),
-            );
-            if let Err(error) = send_message(&mut tunnel_server_stream, &message).await {
-                warning_request_send_proxy_session(flags.clone(), error).await;
-                return;
-            }
-
-            match service_server_stream {
-                Ok(mut service_server_stream) => {
-                    //  proxy starts
-                    debug!("TCP proxying started");
-
-                    let mut tunnel_buffer = vec![0u8; 32768];
-                    let mut service_buffer = vec![0u8; 32768];
-
-                    loop {
-                        select! {
-                            tunnel_server_read = tunnel_server_stream.read(&mut tunnel_buffer) => {
-                                //  tunnel_server (external_client) -> service
-                                match tunnel_server_read {
-                                    Ok(0) => { break; }
-                                    Ok(bytes_read) => {
-                                        let write_result = service_server_stream.write_all(&tunnel_buffer[..bytes_read]).await;
-                                        if let Err(error) = write_result {
-                                            debug!("Proxy write failed: {:?}", error);
-                                            break;
-                                        }
-                                    }
-                                    Err(error) => {
-                                        debug!("Proxy read failed: {:?}", error);
-                                        break;
-                                    }
-                                }
-                            }
-                            service_server_read = service_server_stream.read(&mut service_buffer) => {
-                                //  service -> tunnel_server (external_client)
-                                match service_server_read {
-                                    Ok(0) => { break; }
-                                    Ok(bytes_read) => {
-                                        let write_result = tunnel_server_stream.write_all(&service_buffer[..bytes_read]).await;
-                                        if let Err(error) = write_result {
-                                            debug!("Proxy write failed: {:?}", error);
-                                            break;
-                                        }
-                                    }
-                                    Err(error) => {
-                                        debug!("Proxy read failed: {:?}", error);
-                                        break;
-                                    }
-                                }
-                            }
-                            _client_cancealled = flags.local_cancellation_token.cancelled() => {
-                                break;
-                            }
-                        }
-                    }
-
-                    debug!("TCP proxying ended");
-                }
-                Err(error) => {
-                    warn!("Unable to connect to the tunnelled service: {:?}", error);
-                    return;
-                }
-            }
-        }
+    let mut tunnel_server_stream = match server_proxy_stream {
+        Ok(stream) => stream,
         Err(error) => {
             warn!("Unable to connect to the tunnel server: {:?}", error);
+            return;
         }
+    };
+
+    //  hash
+    let Ok(secret) = BASE64_STANDARD.decode(secret) else {
+        error!("Received invalid secret from the server");
+        flags.local_cancellation_token.cancel();
+        return;
+    };
+    let mut hmac: Hmac<Sha256> =
+        Hmac::new_from_slice(secret.as_slice()).expect("Hmac does not require key size");
+    hmac.update(redirect_id.as_bytes());
+    let id_hash = BASE64_STANDARD.encode(hmac.finalize().into_bytes());
+
+    //  proxy message (claim external client)
+    let message = Message::new(
+        MessageType::Proxy,
+        serde_json::to_string(&ProxyMessage {
+            proxy_id: id_hash.clone(),
+        })
+        .unwrap_or_else(|_| unreachable!()),
+    );
+    if let Err(error) = send_message(&mut tunnel_server_stream, &message).await {
+        warning_request_send_proxy_session(flags.clone(), error).await;
+        return;
     }
+
+    let mut service_server_stream = match service_server_stream {
+        Ok(stream) => stream,
+        Err(error) => {
+            warn!("Unable to connect to the tunnelled service: {:?}", error);
+            return;
+        }
+    };
+
+    //  proxy starts
+    debug!("TCP proxying started");
+
+    const BUFFER_SIZE: usize = 32768;
+
+    let io_copy = copy_bidirectional_with_sizes(
+        &mut tunnel_server_stream,
+        &mut service_server_stream,
+        BUFFER_SIZE,
+        BUFFER_SIZE,
+    )
+    .with_cancellation_token_owned(flags.local_cancellation_token);
+
+    match io_copy.await {
+        Some(Ok(_)) => { /* gracefully closed by either service or client */ }
+        Some(Err(error)) => {
+            match error.kind() {
+                ErrorKind::BrokenPipe => {
+                    //  often occurs under normal circumstances
+                    debug!("TCP proxying ended with BrokenPipe");
+                }
+                ErrorKind::ConnectionReset => {
+                    //  often occurs under normal circumstances
+                    debug!("TCP proxying ended with ConnectionReset");
+                }
+                ErrorKind::UnexpectedEof => {
+                    //  often occurs under normal circumstances
+                    debug!("TCP proxying ended with UnexpectedEof");
+                }
+                _ => {
+                    warn!("TCP proxying ended with error: {:?}", error);
+                }
+            }
+        }
+        None => { /* cancelled by cancellation token */ }
+    }
+
+    debug!("TCP proxying ended");
 }
 
 async fn warning_request_send_proxy_session(flags: Flags, error: io::Error) {

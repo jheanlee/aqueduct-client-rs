@@ -17,6 +17,7 @@ use crate::config::config_handler::read_config;
 use crate::tunnel::control::tunnel_client_control;
 use crate::tunnel::model::{Flags, Shared, TunnelConfig};
 use crate::tunnel::tls::DisableCertVerification;
+use socket2::SockRef;
 use std::process::exit;
 use std::sync::Arc;
 use tokio::net::TcpStream;
@@ -72,6 +73,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>
     .await
     .unwrap_or_else(|error| {
         error!("Unable to connect to the server: {:?}", error);
+        exit(1);
+    });
+
+    let socket_ref = SockRef::from(&tcp_stream);
+    socket_ref.set_tcp_nodelay(true).unwrap_or_else(|error| {
+        error!("Unable to configure the control connection: {:?}", error);
         exit(1);
     });
 
