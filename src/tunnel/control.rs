@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use crate::common::log::{log, Level};
 use crate::message::message::{
     ClientServiceMessage, Message, MessageType, ServiceAuth, ServiceMessage,
 };
@@ -27,6 +26,7 @@ use tokio::net::TcpStream;
 use tokio::select;
 use tokio::sync::mpsc;
 use tokio_rustls::client::TlsStream;
+use tracing::{debug, error, warn};
 
 pub async fn tunnel_client_control(
     flags: Flags,
@@ -88,10 +88,6 @@ pub async fn tunnel_client_control(
 
         select! {
             biased;
-            _global_cancelled = flags.global_cancellation_token.cancelled() => {
-                flags.local_cancellation_token.cancel();
-                break;
-            }
             _local_cancelled = flags.local_cancellation_token.cancelled() => {
                 break;
             }
@@ -100,8 +96,8 @@ pub async fn tunnel_client_control(
                     Ok(message) => {
                         match message.message_type {
                             MessageType::Heartbeat => {
-                                log(Level::Debug, "Heartbeat", "tunnel_client_control").await;
                                 let heartbeat_message = Message::new(MessageType::Heartbeat, "".to_string());
+                                debug!("Heartbeat sent");
 
                                 if let Err(error) = send_message(&mut tunnel_server_control_tx, &heartbeat_message).await {
                                     error_request_send(flags.clone(), error).await;
@@ -111,26 +107,20 @@ pub async fn tunnel_client_control(
                             }
                             MessageType::Service => {
                                 let Ok(service_message) = serde_json::from_str::<ClientServiceMessage>(message.message_string.as_str()) else {
-                                    log(Level::Warning, "Bad request from server", "tunnel_client_control").await;
+                                    warn!("Received malformed message from the server");
                                     break;
                                 };
 
                                 let Some(redirect_id_rx) = redirect_id_rx.take() else {
-                                    log(Level::Warning, "Bad request from server", "tunnel_client_control").await;
+                                    warn!("Received malformed message from the server");
                                     break;
                                 };
 
-                                log(
-                                    Level::Always,
-                                    format!(
-                                        "Tunnelled service is now available at {}:{}",
-                                        shared.config.tunnel_host.to_str(),
-                                        service_message.port
-                                    )
-                                    .as_str(),
-                                    "tunnel_client_control"
-                                )
-                                .await;
+                                warn!(
+                                    "Tunnelled service is now available at {}:{}",
+                                    shared.config.tunnel_host.to_str(),
+                                    service_message.port
+                                );
 
                                 proxy_control_thread = Some(tokio::spawn(tunnel_proxy_control(
                                     flags.clone(),
@@ -141,16 +131,7 @@ pub async fn tunnel_client_control(
                                 )));
                             }
                             MessageType::Proxy => {
-                                log(
-                                    Level::Debug,
-                                    format!(
-                                        "Tunnel external user id received: {}",
-                                        message.message_string
-                                    )
-                                    .as_str(),
-                                    "tunnel_client_control"
-                                )
-                                .await;
+                                debug!("Tunnel external user id received: {}", message.message_string);
                                 if let Err(error) = redirect_id_tx.send(message.message_string).await {
                                     error_general(flags.clone(), error).await;
                                 }
@@ -163,22 +144,14 @@ pub async fn tunnel_client_control(
                                 //  placeholder
                             }
                             MessageType::Error => {
-                                log(
-                                    Level::Error,
-                                    format!(
-                                        "Connection with host closed with an error: {}",
-                                        message.message_string
-                                    )
-                                    .as_str(),
-                                    "tunnel::control::tunnel_client_control"
-                                )
-                                .await;
+                                error!("Control connection with the server closed with an error: {:?}", message.message_string);
                                 flags.local_cancellation_token.cancel();
                                 break;
                             }
                         }
                     }
-                    Err(_error) => {
+                    Err(error) => {
+                        error!("Control connection with the server closed with an error: {:?}", error);
                         flags.local_cancellation_token.cancel();
                         break;
                     }
@@ -191,30 +164,15 @@ pub async fn tunnel_client_control(
         let _ = proxy_control_thread.await;
     }
 
-    log(
-        Level::Info,
-        "Connection with host closed",
-        "tunnel::control::tunnel_client_control",
-    )
-    .await;
+    warn!("Control connection with the server closed");
 }
 
 async fn error_request_send(flags: Flags, error: io::Error) {
-    log(
-        Level::Error,
-        format!("Unable to send request to host: {:?}", error).as_str(),
-        "tunnel::control::tunnel_client_control",
-    )
-    .await;
+    error!("Unable to send request to the server: {:?}", error);
     flags.local_cancellation_token.cancel();
 }
 
 async fn error_general(flags: Flags, error: impl std::fmt::Debug) {
-    log(
-        Level::Error,
-        format!("An error has occurred: {:?}", error).as_str(),
-        "tunnel::control::tunnel_client_control",
-    )
-    .await;
+    error!("An error has occurred: {:?}", error);
     flags.local_cancellation_token.cancel();
 }

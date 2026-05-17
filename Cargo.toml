@@ -6,12 +6,10 @@ license = "Apache-2.0"
 
 [dependencies]
 base64 = "0.22.1"
-chrono = "0.4.44"
 clap = { version = "4.5.61", features = ["derive"] }
 dotenv = "0.15.0"
 futures = "0.3.32"
 hmac = "0.13.0"
-log = "0.4.29"
 regex = "1.12.3"
 rustls = "0.23.32"
 rustls-native-certs = "0.8.3"
@@ -23,6 +21,9 @@ tokio = { version = "1.51.0", features = ["macros", "net", "rt", "rt-multi-threa
 tokio-rustls = "0.26.4"
 tokio-stream = "0.1.18"
 tokio-util = { version = "0.7.18", features = ["join-map", "rt", "codec"] }
+tracing = "0.1.44"
+tracing-appender = "0.2.5"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 oslog = "0.2.0"

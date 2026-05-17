@@ -19,7 +19,6 @@ use tokio_util::sync::CancellationToken;
 
 #[derive(Clone)]
 pub struct Flags {
-    pub global_cancellation_token: CancellationToken,
     pub local_cancellation_token: CancellationToken,
 }
 

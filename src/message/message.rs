@@ -15,9 +15,7 @@
  */
 
 use crate::message::error::MessageError;
-use crate::message::error::MessageError::{
-    InvalidString, InvalidType, InvalidLength,
-};
+use crate::message::error::MessageError::{InvalidLength, InvalidString, InvalidType};
 
 static MAX_MESSAGE_LEN: usize = 256;
 

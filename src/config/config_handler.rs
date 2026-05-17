@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-use crate::common::log::{Level, LogConfig};
 use crate::config::args::Args;
 use crate::config::error::ConfigError;
 use crate::config::error::ConfigError::AuthenticationRequired;
@@ -33,7 +32,6 @@ pub struct Config {
     pub tunnel_password: Option<String>,
     pub tunnel_token: Option<String>,
     pub tunnel_disable_certificate_check: bool,
-    pub log_config: LogConfig,
 }
 
 ///   Reads config from
@@ -50,18 +48,7 @@ pub fn read_config() -> Result<Config, ConfigError> {
         tunnel_password: None,
         tunnel_token: None,
         tunnel_disable_certificate_check: false,
-        log_config: LogConfig {
-            stdout_filter: Level::Info.into(),
-            system_filter: Level::Notice.into(),
-            stdout_enabled: true,
-            #[cfg(target_os = "linux")]
-            syslog_enabled: false,
-            #[cfg(target_os = "macos")]
-            oslog_enabled: false,
-        },
     };
-
-    let mut config_daemon_mode = false;
 
     //  environment variable
     if let Ok(tunnel_host) = std::env::var("AQUEDUCT_HOST") {
@@ -102,16 +89,6 @@ pub fn read_config() -> Result<Config, ConfigError> {
     if let Ok(tunnel_token) = std::env::var("AQUEDUCT_TOKEN") {
         config.tunnel_token = Some(tunnel_token);
     }
-    if let Ok(daemon_mode) = std::env::var("AQUEDUCT_DAEMON") {
-        config_daemon_mode = daemon_mode.parse()?;
-    }
-    if let Ok(stdout_filter) = std::env::var("AQUEDUCT_STDOUT_FILTER") {
-        config.log_config.stdout_filter = stdout_filter.parse()?;
-    }
-    if let Ok(log_filter) = std::env::var("AQUEDUCT_LOG_FILTER") {
-        config.log_config.system_filter = log_filter.parse()?;
-    }
-
     //  args
     let args = Args::parse();
     if let Some(tunnel_host) = args.host {
@@ -154,23 +131,6 @@ pub fn read_config() -> Result<Config, ConfigError> {
     if args.insecure_tls {
         config.tunnel_disable_certificate_check = args.insecure_tls;
     }
-    if args.daemon {
-        config_daemon_mode = args.daemon;
-    }
-    if let Some(stdout_filter) = args.stdout_filter {
-        config.log_config.stdout_filter = stdout_filter;
-    }
-    if let Some(log_filter) = args.log_filter {
-        config.log_config.system_filter = log_filter;
-    }
-
-    //  log config
-    crate::common::log::init(
-        config.log_config.stdout_filter,
-        config.log_config.system_filter,
-        !config_daemon_mode,
-        config_daemon_mode,
-    )?;
 
     if config.tunnel_token.is_none()
         && (config.tunnel_username.is_none() || config.tunnel_password.is_none())
@@ -193,7 +153,8 @@ pub enum TunnelCredential {
     Token(String),
 }
 pub fn get_credentials() -> Option<TunnelCredential> {
-    let token_regex = Regex::new("^aq_[1-9A-HJ-NP-Za-km-z]{43,44}$").unwrap_or_else(|_| unreachable!());
+    let token_regex =
+        Regex::new("^aq_[1-9A-HJ-NP-Za-km-z]{43,44}$").unwrap_or_else(|_| unreachable!());
     let mut credential;
 
     let mut rl = DefaultEditor::new().ok()?;

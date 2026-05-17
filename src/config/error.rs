@@ -23,7 +23,6 @@ pub enum ConfigError {
     AuthenticationRequired,
     // RequiredFieldEmpty((String, String)),
     InvalidValue((String, String)),
-    LogInitError(crate::common::log::Error),
 }
 
 impl std::fmt::Display for ConfigError {
@@ -41,7 +40,6 @@ impl std::fmt::Display for ConfigError {
                 f,
                 "invalid value: `{arg_name}` or environment variable `{env_name}`"
             ),
-            ConfigError::LogInitError(error) => write!(f, "{error}"),
             ConfigError::AuthenticationRequired => {
                 write!(f, "Authentication method must be provided")
             }
@@ -66,11 +64,5 @@ impl From<std::num::ParseIntError> for ConfigError {
 impl From<std::str::ParseBoolError> for ConfigError {
     fn from(value: std::str::ParseBoolError) -> Self {
         ConfigError::ParseBoolError(value)
-    }
-}
-
-impl From<crate::common::log::Error> for ConfigError {
-    fn from(value: crate::common::log::Error) -> Self {
-        ConfigError::LogInitError(value)
     }
 }

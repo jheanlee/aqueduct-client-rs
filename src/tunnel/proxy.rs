@@ -13,14 +13,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use crate::common::log::{log, Level};
 use crate::message::message::{Message, MessageType, ProxyMessage};
 use crate::tunnel::error::TunnelError;
 use crate::tunnel::io;
 use crate::tunnel::io::send_message;
 use crate::tunnel::model::{Flags, Shared};
-use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
+use base64::prelude::BASE64_STANDARD;
 use hmac::{Hmac, KeyInit, Mac};
 use rustls::pki_types::ServerName;
 use sha2::Sha256;
@@ -31,8 +30,9 @@ use tokio::net::TcpStream;
 use tokio::select;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
-use tokio_rustls::client::TlsStream;
 use tokio_rustls::TlsConnector;
+use tokio_rustls::client::TlsStream;
+use tracing::{debug, error, instrument, warn};
 
 ///   Controls all proxy threads, connects to service for each tunnelled external user
 pub async fn tunnel_proxy_control(
@@ -47,11 +47,7 @@ pub async fn tunnel_proxy_control(
     loop {
         select! {
             biased;
-            _global_cancalled = flags.global_cancellation_token.cancelled() => {
-                flags.local_cancellation_token.cancel();
-                break;
-            },
-            _client_cancealled = flags.local_cancellation_token.cancelled() => {
+            _ = flags.local_cancellation_token.cancelled() => {
                 break;
             },
             _ = proxy_threads.join_next(), if !proxy_threads.is_empty() => {},
@@ -74,6 +70,17 @@ pub async fn tunnel_proxy_control(
     }
 }
 
+#[instrument(
+    skip_all,
+    fields(
+        tunnel_service = format!(
+            "{}:{}",
+            shared.config.tunnel_service.to_str(),
+            shared.config.tunnel_service_port
+        ),
+        proxy_id = redirect_id
+    )
+)]
 pub async fn tunnel_proxy_session(
     flags: Flags,
     shared: Arc<Shared>,
@@ -109,12 +116,7 @@ pub async fn tunnel_proxy_session(
         Ok(mut tunnel_server_stream) => {
             //  hash
             let Ok(secret) = BASE64_STANDARD.decode(secret) else {
-                log(
-                    Level::Error,
-                    "Invalid secret",
-                    "tunnel::proxy::tunnel_proxy_session",
-                )
-                .await;
+                error!("Received invalid secret from the server");
                 flags.local_cancellation_token.cancel();
                 return;
             };
@@ -140,19 +142,7 @@ pub async fn tunnel_proxy_session(
             match service_server_stream {
                 Ok(mut service_server_stream) => {
                     //  proxy starts
-                    log(
-                        Level::Debug,
-                        format!(
-                            "TCP proxying started {}:{} <=> {} (redirect id: {})",
-                            shared.config.tunnel_service.to_str(),
-                            shared.config.tunnel_service_port,
-                            tunnel_server_control_addr.to_string(),
-                            redirect_id
-                        )
-                        .as_str(),
-                        "tunnel::proxy::tunnel_proxy_session",
-                    )
-                    .await;
+                    debug!("TCP proxying started");
 
                     let mut tunnel_buffer = vec![0u8; 32768];
                     let mut service_buffer = vec![0u8; 32768];
@@ -166,38 +156,12 @@ pub async fn tunnel_proxy_session(
                                     Ok(bytes_read) => {
                                         let write_result = service_server_stream.write_all(&tunnel_buffer[..bytes_read]).await;
                                         if let Err(error) = write_result {
-                                            log(
-                                                Level::Debug,
-                                                format!(
-                                                    "Proxy write failed {}:{} <= {} (redirect id: {}): {:?}",
-                                                    shared.config.tunnel_service.to_str(),
-                                                    shared.config.tunnel_service_port,
-                                                    tunnel_server_control_addr.to_string(),
-                                                    redirect_id,
-                                                    error
-                                                )
-                                                .as_str(),
-                                                "tunnel::proxy::tunnel_proxy_session"
-                                            )
-                                            .await;
+                                            debug!("Proxy write failed: {:?}", error);
                                             break;
                                         }
                                     }
                                     Err(error) => {
-                                        log(
-                                            Level::Debug,
-                                            format!(
-                                                "Proxy read failed {}:{} <= {} (redirect id: {}): {:?}",
-                                                shared.config.tunnel_service.to_str(),
-                                                shared.config.tunnel_service_port,
-                                                tunnel_server_control_addr.to_string(),
-                                                redirect_id,
-                                                error
-                                            )
-                                            .as_str(),
-                                            "tunnel::proxy::tunnel_proxy_session"
-                                        )
-                                        .await;
+                                        debug!("Proxy read failed: {:?}", error);
                                         break;
                                     }
                                 }
@@ -209,38 +173,12 @@ pub async fn tunnel_proxy_session(
                                     Ok(bytes_read) => {
                                         let write_result = tunnel_server_stream.write_all(&service_buffer[..bytes_read]).await;
                                         if let Err(error) = write_result {
-                                            log(
-                                                Level::Debug,
-                                                format!(
-                                                    "Proxy write failed {}:{} => {} (redirect id: {}): {:?}",
-                                                    shared.config.tunnel_service.to_str(),
-                                                    shared.config.tunnel_service_port,
-                                                    tunnel_server_control_addr.to_string(),
-                                                    redirect_id,
-                                                    error
-                                                )
-                                                .as_str(),
-                                                "tunnel::proxy::tunnel_proxy_session"
-                                            )
-                                            .await;
+                                            debug!("Proxy write failed: {:?}", error);
                                             break;
                                         }
                                     }
                                     Err(error) => {
-                                        log(
-                                            Level::Debug,
-                                            format!(
-                                                "Proxy read failed {}:{} => {} (redirect id: {}): {:?}",
-                                                shared.config.tunnel_service.to_str(),
-                                                shared.config.tunnel_service_port,
-                                                tunnel_server_control_addr.to_string(),
-                                                redirect_id,
-                                                error
-                                            )
-                                            .as_str(),
-                                            "tunnel::proxy::tunnel_proxy_session"
-                                        )
-                                        .await;
+                                        debug!("Proxy read failed: {:?}", error);
                                         break;
                                     }
                                 }
@@ -251,48 +189,21 @@ pub async fn tunnel_proxy_session(
                         }
                     }
 
-                    log(
-                        Level::Debug,
-                        format!(
-                            "TCP proxying ended {}:{} <=> {} (redirect id: {})",
-                            shared.config.tunnel_service.to_str(),
-                            shared.config.tunnel_service_port,
-                            tunnel_server_control_addr.to_string(),
-                            redirect_id
-                        )
-                        .as_str(),
-                        "tunnel::proxy::tunnel_proxy_session",
-                    )
-                    .await;
+                    debug!("TCP proxying ended");
                 }
                 Err(error) => {
-                    log(
-                        Level::Warning,
-                        format!("Unable to connect to the tunnelled service: {:?}", error).as_str(),
-                        "tunnel::proxy::tunnel_proxy_session",
-                    )
-                    .await;
+                    warn!("Unable to connect to the tunnelled service: {:?}", error);
                     return;
                 }
             }
         }
         Err(error) => {
-            log(
-                Level::Warning,
-                format!("Unable to connect to the tunnel server: {:?}", error).as_str(),
-                "tunnel::proxy::tunnel_proxy_session",
-            )
-            .await;
+            warn!("Unable to connect to the tunnel server: {:?}", error);
         }
     }
 }
 
 async fn warning_request_send_proxy_session(flags: Flags, error: io::Error) {
-    log(
-        Level::Warning,
-        format!("Unable to send request to host: {:?}", error).as_str(),
-        "tunnel::proxy::tunnel_proxy_session",
-    )
-    .await;
+    warn!("Unable to send request to the tunnel server: {:?}", error);
     flags.local_cancellation_token.cancel();
 }
