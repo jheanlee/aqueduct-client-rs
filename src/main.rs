@@ -13,32 +13,23 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-use crate::common::log::{Level, LogConfig, color_code, log};
 use crate::config::config_handler::read_config;
 use crate::tunnel::control::tunnel_client_control;
 use crate::tunnel::model::{Flags, Shared, TunnelConfig};
 use crate::tunnel::tls::DisableCertVerification;
-use std::sync::{Arc, LazyLock};
+use std::process::exit;
+use std::sync::Arc;
 use tokio::net::TcpStream;
-use tokio::sync::RwLock;
 use tokio_rustls::TlsConnector;
 use tokio_util::sync::CancellationToken;
+use tracing::{error, warn};
+use tracing_subscriber::EnvFilter;
+use tracing_subscriber::util::SubscriberInitExt;
 
 mod common;
 mod config;
 mod message;
 mod tunnel;
-
-static LOG_CONFIG: LazyLock<RwLock<LogConfig>> = LazyLock::new(|| {
-    RwLock::new(LogConfig {
-        stdout_filter: Level::Info.into(),
-        system_filter: Level::Notice.into(),
-        stdout_enabled: true,
-        syslog_enabled: false,
-        oslog_enabled: false,
-    })
-});
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
@@ -46,11 +37,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>
     let config = read_config().expect("ConfigError");
 
     //  log
-    {
-        let mut log_config = LOG_CONFIG.write().await;
-        *log_config = config.log_config;
-    }
+    let (non_blocking_stdout, _guard) = tracing_appender::non_blocking(std::io::stdout());
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(non_blocking_stdout)
+        .with_env_filter(EnvFilter::from_default_env())
+        .finish();
+    subscriber.init();
 
+    //  TLS
     let mut root_cert_store = rustls::RootCertStore::empty();
     for cert in rustls_native_certs::load_native_certs().expect("Unable to load certificates") {
         root_cert_store.add(cert)?;
@@ -62,7 +56,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>
     tls_config.key_log = Arc::new(rustls::KeyLogFile::new());
 
     if config.tunnel_disable_certificate_check {
-        log(Level::Always, format!("{}[Warning]{} TLS certificate check is disabled; the connection is considered insecure", color_code::YELLOW, color_code::RESET).as_str(), "core::main").await;
+        warn!("TLS certificate check is disabled; the connection is considered insecure");
         tls_config
             .dangerous()
             .set_certificate_verifier(Arc::new(DisableCertVerification {}));
@@ -70,18 +64,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>
 
     let tls_connector = TlsConnector::from(Arc::new(tls_config.clone()));
 
+    //  connect (control)
     let tcp_stream = TcpStream::connect((
         config.tunnel_host.to_str().to_string(),
         config.tunnel_host_port,
     ))
     .await
-    .expect("Unable to connect to server");
+    .unwrap_or_else(|error| {
+        error!("Unable to connect to the server: {:?}", error);
+        exit(1);
+    });
 
     let tunnel_server_addr = tcp_stream.peer_addr()?;
     let tls_stream = tls_connector
         .connect(config.tunnel_host.clone(), tcp_stream)
         .await
-        .expect("Unable to connect to server");
+        .unwrap_or_else(|error| {
+            error!("Unable to connect to the server: {:?}", error);
+            exit(1);
+        });
 
     let cancellation_token = CancellationToken::new();
 
@@ -89,7 +90,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>
         tls_config,
         config: TunnelConfig {
             tunnel_host: config.tunnel_host,
-            tunnel_host_port: config.tunnel_host_port,
             tunnel_service: config.tunnel_service,
             tunnel_service_port: config.tunnel_service_port,
             tunnel_username: config.tunnel_username,
@@ -100,8 +100,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>
 
     tunnel_client_control(
         Flags {
-            global_cancellation_token: cancellation_token.clone(),
-            local_cancellation_token: CancellationToken::new(),
+            local_cancellation_token: cancellation_token.child_token(),
         },
         shared.clone(),
         tunnel_server_addr,

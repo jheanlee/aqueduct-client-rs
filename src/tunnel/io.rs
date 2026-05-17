@@ -16,28 +16,26 @@
 
 use crate::message::error::MessageError;
 use crate::message::message::Message;
+use futures::sink::SinkExt;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_stream::StreamExt;
-use futures::sink::SinkExt;
 use tokio_util::bytes::Bytes;
 use tokio_util::codec::LengthDelimitedCodec;
 
 #[derive(Debug)]
 pub enum Error {
-    MessageError(MessageError),
-    IoError(std::io::Error),
+    MessageError,
+    IoError,
     ClientClosed,
 }
 
 impl From<MessageError> for Error {
-    fn from(value: MessageError) -> Self {
-        Self::MessageError(value)
+    fn from(_value: MessageError) -> Self {
+        Self::MessageError
     }
 }
 
-pub async fn read_message(
-    stream: &mut (impl AsyncReadExt + Unpin),
-) -> Result<Message, Error> {
+pub async fn read_message(stream: &mut (impl AsyncReadExt + Unpin)) -> Result<Message, Error> {
     let mut reader = LengthDelimitedCodec::builder()
         .length_field_offset(0)
         .length_field_type::<u8>()
@@ -45,13 +43,10 @@ pub async fn read_message(
         .new_read(stream);
     let read_result = reader.next().await;
 
-
     match read_result {
-        Some(Ok(bytes_read)) => {
-            Ok(Message::from_bytes(bytes_read.as_ref(), bytes_read.len())?)
-        }
-        Some(Err(error)) => Err(Error::IoError(error)),
-        None => Err(Error::ClientClosed)
+        Some(Ok(bytes_read)) => Ok(Message::from_bytes(bytes_read.as_ref(), bytes_read.len())?),
+        Some(Err(_)) => Err(Error::IoError),
+        None => Err(Error::ClientClosed),
     }
 }
 
@@ -66,10 +61,9 @@ pub async fn send_message(
         .new_write(stream);
     let message_bytes = message.to_vec()?;
     let nbytes = message_bytes.len();
-    
 
     match writer.send(Bytes::from(message_bytes)).await {
         Ok(_) => Ok(nbytes),
-        Err(error) => Err(Error::IoError(error)),
+        Err(_) => Err(Error::IoError),
     }
 }

@@ -15,9 +15,7 @@
  */
 
 use crate::message::error::MessageError;
-use crate::message::error::MessageError::{
-    InvalidString, InvalidType, InvalidLength,
-};
+use crate::message::error::MessageError::{InvalidLength, InvalidString, InvalidType};
 
 static MAX_MESSAGE_LEN: usize = 256;
 
@@ -74,27 +72,6 @@ impl Message {
             buffer.push(self.message_type.as_u8());
             buffer.extend(self.message_string.as_bytes());
             Ok(buffer)
-        } else {
-            Err(InvalidLength)
-        }
-    }
-
-    pub fn from_vec(vec: &Vec<u8>) -> Result<Self, MessageError> {
-        if !vec.is_empty() {
-            if vec.len() <= MAX_MESSAGE_LEN - 1 {
-                Ok(Self {
-                    message_type: MessageType::from_u8(vec[0])?,
-                    message_string: if vec.len() > 1 {
-                        std::str::from_utf8(&vec[1..])
-                            .map_err(|_| InvalidString)?
-                            .to_string()
-                    } else {
-                        Default::default()
-                    },
-                })
-            } else {
-                Err(InvalidLength)
-            }
         } else {
             Err(InvalidLength)
         }
