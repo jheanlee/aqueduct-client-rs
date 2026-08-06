@@ -14,12 +14,13 @@
  * limitations under the License.
  */
 use crate::message::message::{Message, MessageType, ProxyMessage};
+use crate::message::v1::common::MESSAGE_VERSION_V1;
 use crate::tunnel::error::TunnelError;
-use crate::tunnel::io;
-use crate::tunnel::io::send_message;
+use crate::tunnel::message_handler::send_message;
 use crate::tunnel::model::{Flags, Shared};
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
+use bytes::BytesMut;
 use hmac::{Hmac, KeyInit, Mac};
 use rustls::pki_types::ServerName;
 use sha2::Sha256;
@@ -34,6 +35,7 @@ use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 use tokio_rustls::TlsConnector;
 use tokio_rustls::client::TlsStream;
+use tokio_util::codec::LengthDelimitedCodec;
 use tokio_util::future::FutureExt;
 use tracing::{debug, error, instrument, warn};
 
@@ -119,7 +121,7 @@ pub async fn tunnel_proxy_session(
     let (service_server_stream, server_proxy_stream) =
         tokio::join!(service_connect_future, server_connect_future);
 
-    let mut tunnel_server_stream = match server_proxy_stream {
+    let tunnel_server_stream = match server_proxy_stream {
         Ok(stream) => stream,
         Err(error) => {
             warn!("Unable to connect to the tunnel server: {:?}", error);
@@ -139,18 +141,42 @@ pub async fn tunnel_proxy_session(
     let id_hash = BASE64_STANDARD.encode(hmac.finalize().into_bytes());
 
     //  proxy message (claim external client)
-    let message = Message::new(
-        MessageType::Proxy,
-        serde_json::to_string(&ProxyMessage {
-            proxy_id: id_hash.clone(),
-        })
-        .unwrap_or_else(|_| unreachable!()),
-    );
-    if let Err(error) = send_message(&mut tunnel_server_stream, &message).await {
-        warning_request_send_proxy_session(flags.clone(), error).await;
+    //  temporarily change tunnel_server_stream into framed
+    let mut tunnel_server_stream = LengthDelimitedCodec::builder()
+        .length_field_offset(0)
+        .length_field_type::<u8>()
+        .length_adjustment(0)
+        .new_framed(tunnel_server_stream);
+    if let Err(error) = async {
+        let message = Message::new(
+            MESSAGE_VERSION_V1,
+            MessageType::Proxy,
+            serde_json::to_string(&ProxyMessage {
+                proxy_id: id_hash.clone(),
+            })
+            .unwrap_or_else(|_| unreachable!())
+            .as_str(),
+        );
+        let mut buffer = BytesMut::with_capacity(256);
+        send_message(
+            &mut tunnel_server_stream,
+            &mut buffer,
+            &message,
+            flags.local_cancellation_token.clone(),
+        )
+        .await
+    }
+    .await
+    {
+        warn!("Unable to send request to the tunnel server: {:?}", error);
+        flags.local_cancellation_token.cancel();
         return;
     }
 
+    //  get the inner tunnel_server_stream back
+    let mut tunnel_server_stream = tunnel_server_stream.into_inner();
+
+    //  service stream
     let mut service_server_stream = match service_server_stream {
         Ok(stream) => stream,
         Err(error) => {
@@ -197,9 +223,4 @@ pub async fn tunnel_proxy_session(
     }
 
     debug!("TCP proxying ended");
-}
-
-async fn warning_request_send_proxy_session(flags: Flags, error: io::Error) {
-    warn!("Unable to send request to the tunnel server: {:?}", error);
-    flags.local_cancellation_token.cancel();
 }

@@ -13,11 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-use crate::message::error::MessageError;
-use crate::message::error::MessageError::{InvalidLength, InvalidString, InvalidType};
-
-static MAX_MESSAGE_LEN: usize = 256;
+use tokio_util::bytes::Bytes;
 
 #[derive(Clone)]
 pub enum MessageType {
@@ -28,95 +24,42 @@ pub enum MessageType {
     Empty, //  placeholder
     Error,
 }
-impl MessageType {
-    pub fn as_u8(&self) -> u8 {
-        match self {
-            Self::Heartbeat => 0x10,
-            Self::Service => 0x11,
-            Self::Proxy => 0x12,
-            Self::Close => 0xf0,
-            Self::Empty => 0xfe,
-            Self::Error => 0xff,
-        }
-    }
 
-    pub fn from_u8(message_type: u8) -> Result<Self, MessageError> {
-        match message_type {
-            0x10 => Ok(Self::Heartbeat),
-            0x11 => Ok(Self::Service),
-            0x12 => Ok(Self::Proxy),
-            0xf0 => Ok(Self::Close),
-            0xfe => Ok(Self::Empty),
-            0xff => Ok(Self::Error),
-            _ => Err(InvalidType),
-        }
-    }
-}
-
+#[derive(Clone)]
 pub struct Message {
+    pub message_version: u8,
     pub message_type: MessageType,
-    pub message_string: String,
+    pub message_payload: Bytes,
 }
 
 impl Message {
-    pub fn new(message_type: MessageType, message_string: String) -> Self {
+    pub fn new(message_version: u8, message_type: MessageType, message_payload: &str) -> Self {
         Self {
+            message_version,
             message_type,
-            message_string,
-        }
-    }
-
-    pub fn to_vec(&self) -> Result<Vec<u8>, MessageError> {
-        if self.message_string.len() <= MAX_MESSAGE_LEN - 1 {
-            let mut buffer: Vec<u8> = Vec::new();
-            buffer.push(self.message_type.as_u8());
-            buffer.extend(self.message_string.as_bytes());
-            Ok(buffer)
-        } else {
-            Err(InvalidLength)
-        }
-    }
-
-    pub fn from_bytes(bytes: &[u8], len: usize) -> Result<Self, MessageError> {
-        if !bytes.is_empty() || len == 0 {
-            if len <= MAX_MESSAGE_LEN - 1 || len > bytes.len() {
-                Ok(Self {
-                    message_type: MessageType::from_u8(bytes[0])?,
-                    message_string: if bytes.len() > 1 && len > 1 {
-                        std::str::from_utf8(&bytes[1..len])
-                            .map_err(|_| InvalidString)?
-                            .to_string()
-                    } else {
-                        Default::default()
-                    },
-                })
-            } else {
-                Err(InvalidLength)
-            }
-        } else {
-            Err(InvalidLength)
+            message_payload: Bytes::copy_from_slice(message_payload.as_bytes()),
         }
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(serde::Serialize)]
 pub struct ServiceMessage {
     pub auth: ServiceAuth,
 }
 
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(serde::Serialize)]
 pub enum ServiceAuth {
     Token { token: String },
     Password { username: String, password: String },
 }
 
-#[derive(serde::Deserialize, serde::Serialize)]
-pub struct ProxyMessage {
-    pub proxy_id: String,
-}
-
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(serde::Deserialize)]
 pub struct ClientServiceMessage {
     pub port: u16,
     pub secret: String,
+}
+
+#[derive(serde::Serialize)]
+pub struct ProxyMessage {
+    pub proxy_id: String,
 }

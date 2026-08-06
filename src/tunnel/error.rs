@@ -13,33 +13,30 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-use crate::message::error::MessageError;
+use crate::message::error::{MessageBuildError, MessageParseError};
 
 #[derive(Debug)]
 pub enum TunnelError {
-    MessageError(MessageError),
+    MessageBuildError(MessageBuildError),
+    MessageParseError(MessageParseError),
     IoError(std::io::Error),
     InvalidDnsNameError(rustls::pki_types::InvalidDnsNameError),
+    ServerClosed,
 }
 
 impl std::fmt::Display for TunnelError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::MessageError(e) => write!(f, "MessageError: {e}"),
+            Self::MessageBuildError(e) => write!(f, "MessageBuildError: {e}"),
+            Self::MessageParseError(e) => write!(f, "MessageParseError: {e}"),
             Self::IoError(e) => write!(f, "IoError: {e}"),
             Self::InvalidDnsNameError(e) => write!(f, "InvalidDnsNameError: {e}"),
+            Self::ServerClosed => write!(f, "Server closed"),
         }
     }
 }
 
 impl std::error::Error for TunnelError {}
-
-impl From<MessageError> for TunnelError {
-    fn from(error: MessageError) -> Self {
-        Self::MessageError(error)
-    }
-}
 
 impl From<std::io::Error> for TunnelError {
     fn from(error: std::io::Error) -> Self {
@@ -50,5 +47,17 @@ impl From<std::io::Error> for TunnelError {
 impl From<rustls::pki_types::InvalidDnsNameError> for TunnelError {
     fn from(error: rustls::pki_types::InvalidDnsNameError) -> Self {
         Self::InvalidDnsNameError(error)
+    }
+}
+
+impl From<MessageBuildError> for TunnelError {
+    fn from(error: MessageBuildError) -> Self {
+        Self::MessageBuildError(error)
+    }
+}
+
+impl From<MessageParseError> for TunnelError {
+    fn from(error: MessageParseError) -> Self {
+        Self::MessageParseError(error)
     }
 }
