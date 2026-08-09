@@ -55,7 +55,7 @@ pub fn read_config() -> Result<Config, ConfigError> {
         let host_parts: Vec<&str> = tunnel_host.splitn(2, ':').collect();
         config.tunnel_host = ServerName::try_from(
             host_parts
-                .get(0)
+                .first()
                 .ok_or_else(|| {
                     ConfigError::InvalidValue(("[host]".to_string(), "AQUEDUCT_HOST".to_string()))
                 })?
@@ -68,7 +68,7 @@ pub fn read_config() -> Result<Config, ConfigError> {
         let service_parts: Vec<&str> = tunnel_service.splitn(2, ':').collect();
         config.tunnel_service = ServerName::try_from(
             service_parts
-                .get(0)
+                .first()
                 .ok_or_else(|| {
                     ConfigError::InvalidValue((
                         "[service]".to_string(),
@@ -95,7 +95,7 @@ pub fn read_config() -> Result<Config, ConfigError> {
         let host_parts: Vec<&str> = tunnel_host.splitn(2, ':').collect();
         config.tunnel_host = ServerName::try_from(
             host_parts
-                .get(0)
+                .first()
                 .ok_or_else(|| {
                     ConfigError::InvalidValue(("[host]".to_string(), "AQUEDUCT_HOST".to_string()))
                 })?
@@ -107,7 +107,7 @@ pub fn read_config() -> Result<Config, ConfigError> {
     if let Some(tunnel_service) = args.service {
         let service_parts: Vec<&str> = tunnel_service.splitn(2, ':').collect();
         config.tunnel_service =
-            ServerName::try_from(service_parts.get(0).unwrap_or(&"localhost").to_string())
+            ServerName::try_from(service_parts.first().unwrap_or(&"localhost").to_string())
                 .map_err(|_| ConfigError::InvalidDNSName)?;
         config.tunnel_service_port = service_parts
             .get(1)

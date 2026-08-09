@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 use crate::message::common::MessageParser;
-use crate::message::message::{
+use crate::message::r#type::{
     ClientServiceMessage, Message, MessageType, ServiceAuth, ServiceMessage,
 };
 use crate::message::v1::common::MESSAGE_VERSION_V1;

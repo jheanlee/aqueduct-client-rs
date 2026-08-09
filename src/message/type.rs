@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+use crate::message::v1::common::MessageTypeV1;
 use tokio_util::bytes::Bytes;
 
 #[derive(Clone)]
@@ -62,4 +63,17 @@ pub struct ClientServiceMessage {
 #[derive(serde::Serialize)]
 pub struct ProxyMessage {
     pub proxy_id: String,
+}
+
+impl From<MessageTypeV1> for MessageType {
+    fn from(value: MessageTypeV1) -> Self {
+        match value {
+            MessageTypeV1::Heartbeat => MessageType::Heartbeat,
+            MessageTypeV1::Service => MessageType::Service,
+            MessageTypeV1::Proxy => MessageType::Proxy,
+            MessageTypeV1::Close => MessageType::Close,
+            MessageTypeV1::Empty => MessageType::Empty,
+            MessageTypeV1::Error => MessageType::Error,
+        }
+    }
 }

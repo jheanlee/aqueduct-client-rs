@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use crate::message::message::{Message, MessageType, ProxyMessage};
+use crate::message::r#type::{Message, MessageType, ProxyMessage};
 use crate::message::v1::common::MESSAGE_VERSION_V1;
 use crate::tunnel::error::TunnelError;
 use crate::tunnel::message_handler::send_message;

@@ -15,7 +15,7 @@
  */
 use crate::message::common::{MESSAGE_VERSION_BYTES, MessageBuilderVersioned};
 use crate::message::error::MessageBuildError;
-use crate::message::message::Message;
+use crate::message::r#type::Message;
 use crate::message::v1::common::{
     MESSAGE_PAYLOAD_MAX_LEN_V1, MESSAGE_TYPE_BYTES_V1, MessageTypeV1,
 };

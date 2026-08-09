@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 use crate::message::common::MessageBuilder;
-use crate::message::message::Message;
+use crate::message::r#type::Message;
 use crate::tunnel::error::TunnelError;
 use bytes::{Bytes, BytesMut};
 use futures::{Sink, SinkExt};
@@ -30,7 +30,7 @@ pub async fn send_message<T>(
 where
     T: Sink<Bytes, Error = std::io::Error> + Unpin,
 {
-    MessageBuilder::encode(&message, buffer)?;
+    MessageBuilder::encode(message, buffer)?;
 
     writer
         .send(buffer.split().freeze())
