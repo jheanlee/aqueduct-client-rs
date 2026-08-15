@@ -1,0 +1,31 @@
+name: Checks
+
+on:
+    push:
+        branches: [ "master" ]
+    pull_request:
+        branches: [ "master" ]
+
+permissions:
+    contents: read
+
+jobs:
+    rust:
+        name: Rust checks
+        runs-on: ubuntu-latest
+
+        steps:
+            -   name: Checkout
+                uses: actions/checkout@v7
+
+            -   name: Setup Rust
+                uses: dtolnay/rust-toolchain@stable
+                with:
+                    toolchain: 1.97.0
+                    components: rustfmt, clippy
+
+            -   name: Check formatting
+                run: cargo fmt --all -- --check
+
+            -   name: Lint
+                run: cargo clippy --all-targets --all-features -- -D warnings
