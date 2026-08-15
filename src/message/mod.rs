@@ -16,5 +16,5 @@
 
 pub mod common;
 pub mod error;
-pub mod message;
+pub mod r#type;
 pub mod v1;
