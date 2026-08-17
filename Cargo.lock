@@ -62,7 +62,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "aqueduct-client-rs"
+name = "aqueduct-client"
 version = "0.1.0"
 dependencies = [
  "base64",
