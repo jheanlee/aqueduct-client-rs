@@ -13,6 +13,6 @@ FROM debian:trixie-slim
 
 WORKDIR /aqueduct
 
-COPY --from=rust-build /aqueduct/target/release/aqueduct-client-rs .
+COPY --from=rust-build /aqueduct/target/release/aqueduct-client .
 
-CMD ["./aqueduct-rs-client"]
+CMD ["./aqueduct-client"]
