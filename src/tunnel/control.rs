@@ -171,7 +171,9 @@ pub async fn tunnel_client_control(
                                 };
 
                                 warn!(
-                                    "Tunnelled service is now available at {}:{}",
+                                    "Service {}:{} is now available at {}:{}",
+                                    shared.config.tunnel_service.to_str(),
+                                    shared.config.tunnel_service_port,
                                     shared.config.tunnel_host.to_str(),
                                     service_message.port
                                 );

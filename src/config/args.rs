@@ -16,13 +16,15 @@
 
 #[derive(clap::Parser)]
 pub struct Args {
+    #[arg(long)]
     pub host: Option<String>,
+    #[arg(long)]
     pub service: Option<String>,
-    #[arg(short, long)]
-    pub username: Option<String>,
-    #[arg(short, long)]
+    #[arg(long)]
+    pub user: Option<String>,
+    #[arg(long)]
     pub password: Option<String>,
-    #[arg(short, long)]
+    #[arg(long)]
     pub token: Option<String>,
     #[arg(long)]
     pub insecure_tls: bool,
