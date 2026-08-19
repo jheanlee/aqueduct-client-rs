@@ -28,7 +28,7 @@ pub struct Config {
     pub tunnel_host_port: u16,
     pub tunnel_service: ServerName<'static>,
     pub tunnel_service_port: u16,
-    pub tunnel_username: Option<String>,
+    pub tunnel_user: Option<String>,
     pub tunnel_password: Option<String>,
     pub tunnel_token: Option<String>,
     pub tunnel_disable_certificate_check: bool,
@@ -40,11 +40,11 @@ pub struct Config {
 ///     3. default value
 pub fn read_config() -> Result<Config, ConfigError> {
     let mut config = Config {
-        tunnel_host: ServerName::try_from("0.0.0.0").unwrap_or_else(|_| unreachable!()),
+        tunnel_host: ServerName::try_from("127.0.0.1").unwrap_or_else(|_| unreachable!()),
         tunnel_host_port: 30330,
-        tunnel_service: ServerName::try_from("0.0.0.0").unwrap_or_else(|_| unreachable!()),
+        tunnel_service: ServerName::try_from("127.0.0.1").unwrap_or_else(|_| unreachable!()),
         tunnel_service_port: 80,
-        tunnel_username: None,
+        tunnel_user: None,
         tunnel_password: None,
         tunnel_token: None,
         tunnel_disable_certificate_check: false,
@@ -80,8 +80,8 @@ pub fn read_config() -> Result<Config, ConfigError> {
         .map_err(|_| ConfigError::InvalidDNSName)?;
         config.tunnel_service_port = service_parts.get(1).unwrap_or(&"80").parse()?;
     }
-    if let Ok(tunnel_username) = std::env::var("AQUEDUCT_USERNAME") {
-        config.tunnel_username = Some(tunnel_username);
+    if let Ok(tunnel_user) = std::env::var("AQUEDUCT_USER") {
+        config.tunnel_user = Some(tunnel_user);
     }
     if let Ok(tunnel_password) = std::env::var("AQUEDUCT_PASSWORD") {
         config.tunnel_password = Some(tunnel_password);
@@ -114,13 +114,13 @@ pub fn read_config() -> Result<Config, ConfigError> {
             .ok_or_else(|| {
                 ConfigError::InvalidValue((
                     "[service-port]".to_string(),
-                    "AQUEDUCT_SERVICE_PORT".to_string(),
+                    "AQUEDUCT_SERVICE".to_string(),
                 ))
             })?
             .parse()?;
     }
-    if let Some(tunnel_username) = args.username {
-        config.tunnel_username = Some(tunnel_username);
+    if let Some(tunnel_username) = args.user {
+        config.tunnel_user = Some(tunnel_username);
     }
     if let Some(tunnel_password) = args.password {
         config.tunnel_password = Some(tunnel_password);
@@ -133,12 +133,12 @@ pub fn read_config() -> Result<Config, ConfigError> {
     }
 
     if config.tunnel_token.is_none()
-        && (config.tunnel_username.is_none() || config.tunnel_password.is_none())
+        && (config.tunnel_user.is_none() || config.tunnel_password.is_none())
     {
         match get_credentials() {
             Some(TunnelCredential::Token(token)) => config.tunnel_token = Some(token),
             Some(TunnelCredential::Password(username, password)) => {
-                config.tunnel_username = Some(username);
+                config.tunnel_user = Some(username);
                 config.tunnel_password = Some(password);
             }
             None => Err(AuthenticationRequired)?,

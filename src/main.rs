@@ -99,7 +99,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>
             tunnel_host: config.tunnel_host,
             tunnel_service: config.tunnel_service,
             tunnel_service_port: config.tunnel_service_port,
-            tunnel_username: config.tunnel_username,
+            tunnel_username: config.tunnel_user,
             tunnel_password: config.tunnel_password,
             tunnel_token: config.tunnel_token,
         },
