@@ -31,7 +31,7 @@ use tokio::sync::mpsc;
 use tokio_rustls::client::TlsStream;
 use tokio_util::bytes::BytesMut;
 use tokio_util::codec::LengthDelimitedCodec;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 pub async fn tunnel_client_control(
     flags: Flags,
@@ -71,7 +71,7 @@ pub async fn tunnel_client_control(
             serde_json::to_string(&ServiceMessage {
                 auth: ServiceAuth::Token { token },
             })
-            .unwrap_or_else(|_| unreachable!())
+            .expect("ServiceMessage must be serializable")
             .as_str(),
         );
 
@@ -93,7 +93,7 @@ pub async fn tunnel_client_control(
             serde_json::to_string(&ServiceMessage {
                 auth: ServiceAuth::Password { username, password },
             })
-            .unwrap_or_else(|_| unreachable!())
+            .expect("ServiceMessage must be serializable")
             .as_str(),
         );
 
@@ -170,7 +170,7 @@ pub async fn tunnel_client_control(
                                     break;
                                 };
 
-                                warn!(
+                                info!(
                                     "Service {}:{} is now available at {}:{}",
                                     shared.config.tunnel_service.to_str(),
                                     shared.config.tunnel_service_port,
@@ -228,7 +228,7 @@ pub async fn tunnel_client_control(
         let _ = proxy_control_task.await;
     }
 
-    warn!("Control connection with the server closed");
+    info!("Control connection with the server closed");
 }
 
 async fn error_general(flags: Flags, error: impl std::fmt::Debug) {

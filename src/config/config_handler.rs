@@ -57,7 +57,7 @@ pub fn read_config() -> Result<Config, ConfigError> {
             host_parts
                 .first()
                 .ok_or_else(|| {
-                    ConfigError::InvalidValue(("[host]".to_string(), "AQUEDUCT_HOST".to_string()))
+                    ConfigError::InvalidValue(("host".to_string(), "AQUEDUCT_HOST".to_string()))
                 })?
                 .to_string(),
         )
@@ -71,7 +71,7 @@ pub fn read_config() -> Result<Config, ConfigError> {
                 .first()
                 .ok_or_else(|| {
                     ConfigError::InvalidValue((
-                        "[service]".to_string(),
+                        "service".to_string(),
                         "AQUEDUCT_SERVICE".to_string(),
                     ))
                 })?
@@ -97,7 +97,7 @@ pub fn read_config() -> Result<Config, ConfigError> {
             host_parts
                 .first()
                 .ok_or_else(|| {
-                    ConfigError::InvalidValue(("[host]".to_string(), "AQUEDUCT_HOST".to_string()))
+                    ConfigError::InvalidValue(("host".to_string(), "AQUEDUCT_HOST".to_string()))
                 })?
                 .to_string(),
         )
@@ -112,10 +112,7 @@ pub fn read_config() -> Result<Config, ConfigError> {
         config.tunnel_service_port = service_parts
             .get(1)
             .ok_or_else(|| {
-                ConfigError::InvalidValue((
-                    "[service-port]".to_string(),
-                    "AQUEDUCT_SERVICE".to_string(),
-                ))
+                ConfigError::InvalidValue(("service".to_string(), "AQUEDUCT_SERVICE".to_string()))
             })?
             .parse()?;
     }

@@ -154,7 +154,7 @@ pub async fn tunnel_proxy_session(
             serde_json::to_string(&ProxyMessage {
                 proxy_id: id_hash.clone(),
             })
-            .unwrap_or_else(|_| unreachable!())
+            .expect("ProxyMessage must be serializable")
             .as_str(),
         );
         let mut buffer = BytesMut::with_capacity(256);
@@ -204,18 +204,15 @@ pub async fn tunnel_proxy_session(
             match error.kind() {
                 ErrorKind::BrokenPipe => {
                     //  often occurs under normal circumstances
-                    debug!("TCP proxying ended with BrokenPipe");
                 }
                 ErrorKind::ConnectionReset => {
                     //  often occurs under normal circumstances
-                    debug!("TCP proxying ended with ConnectionReset");
                 }
                 ErrorKind::UnexpectedEof => {
                     //  often occurs under normal circumstances
-                    debug!("TCP proxying ended with UnexpectedEof");
                 }
                 _ => {
-                    warn!("TCP proxying ended with error: {:?}", error);
+                    debug!("TCP proxying ended with error: {:?}", error);
                 }
             }
         }
