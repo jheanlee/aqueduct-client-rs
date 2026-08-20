@@ -26,7 +26,7 @@ The server requires an existing [PostgreSQL](https://www.postgresql.org/) databa
 and separate public/private key pairs for access and refresh JWTs.
 
 1. Download the prebuilt binary from [server releases](https://github.com/jheanlee/aqueduct-rs/releases)
-2. Copy the [server .env.example]([.env.example](https://github.com/jheanlee/aqueduct-rs/blob/master/.env.example)) to
+2. Copy the [server .env.example](https://github.com/jheanlee/aqueduct-rs/blob/master/.env.example) to
    `.env` and configure the values.
 3. Apply database migrations:
 

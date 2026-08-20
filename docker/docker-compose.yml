@@ -1,0 +1,10 @@
+services:
+    aqueduct-client:
+        image: jheanlee/aqueduct-client:latest
+        restart: unless-stopped
+
+        env_file:
+            - .env
+
+        extra_hosts:
+            - "host.docker.internal:host-gateway"
