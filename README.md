@@ -26,7 +26,7 @@ The server requires an existing [PostgreSQL](https://www.postgresql.org/) databa
 and separate public/private key pairs for access and refresh JWTs.
 
 1. Download the prebuilt binary from [server releases](https://github.com/jheanlee/aqueduct-rs/releases)
-2. Copy the [server .env.example](https://github.com/jheanlee/aqueduct-rs/blob/master/.env.example) to
+2. Copy the [server `.env.example`](https://github.com/jheanlee/aqueduct-rs/blob/master/.env.example) to
    `.env` and configure the values.
 3. Apply database migrations:
 
@@ -40,8 +40,7 @@ and separate public/private key pairs for access and refresh JWTs.
 ./aqueduct init
 ```
 
-This creates the default admin user and initial settings. Change the generated password before using the server in
-production.
+This creates the default admin user and initial settings:
 
 ```
 2026-08-19T14:40:18.207567Z  INFO aqueduct::init::runner: Initialized database:
@@ -56,24 +55,96 @@ production.
 2026-08-19T14:40:18.207629Z  WARN aqueduct::init::runner: IMPORTANT: please change the default password using the management web UI
 ```
 
-5. Start the Aqueduct server.
+5. Start the Aqueduct server:
 
 ```shell
 ./aqueduct
 ```
 
+6. Navigate to http://localhost:30331/users and change the default password.
+
 #### Client
 
 1. Download the prebuilt binary from [client releases](https://github.com/jheanlee/aqueduct-client-rs/releases)
-2. Copy the [client .env.example](.env.example) to
+2. Copy the [client `.env.example`](.env.example) to
    `.env` and configure the values.
-3. Start the Aqueduct client.
+3. Start the Aqueduct client:
 
 ```shell
 ./aqueduct-client
 ```
 
 If the client fails to connect due to an `InvalidCertificate` error, see [Troubleshooting](#troubleshooting).
+
+### Docker
+
+Docker-related files are located in the [`docker`](docker) directory.
+
+#### Server
+
+1. Copy the [example server
+   `docker-compose.yml`](https://github.com/jheanlee/aqueduct-rs/blob/master/docker/docker-compose.yml) and the [server
+   `.env.example`](https://github.com/jheanlee/aqueduct-rs/blob/master/docker/.env.example) to your Docker configuration
+   directory.
+2. Rename `.env.example` to `.env` and configure the values.
+
+The provided Docker Compose includes a PostgreSQL service. If you prefer to use an existing database, remove the
+`postgres` service from the Docker Compose and configure database credentials in `.env`.
+
+3. Start the `postgres` service:
+
+```shell
+docker compose up -d postgres
+```
+
+4. Apply database migrations:
+
+```shell
+docker compose run --rm aqueduct migrate up
+```
+
+5. Initialize the database:
+
+```shell
+docker compose run --rm aqueduct init
+```
+
+This creates the default admin user and initial settings:
+
+```
+2026-08-21T13:23:00.828110Z  INFO aqueduct::init::runner: Initialized database:
+        -------- User --------
+        Username: admin
+        Password: password
+        -------- Settings --------
+        blacklist: enabled
+        blacklist ips: none
+        whitelist: disabled
+        whitelist ips: none
+2026-08-21T13:23:00.828125Z  WARN aqueduct::init::runner: IMPORTANT: please change the default password using the management web UI
+```
+
+6. Start the Aqueduct server:
+
+```shell
+docker compose up
+```
+
+The provided `docker-compose.yml` maps Aqueduct's default ports directly to your host. Edit the Docker Compose file if
+you need to change port settings.
+
+7. Navigate to http://localhost:30331/users and change the default password.
+
+#### Client
+
+1. Copy the [example client `docker-compose.yml`](docker/docker-compose.yml) and the [client
+   `.env.example`](docker/.env.example) to your Docker configuration directory.
+2. Rename `.env.example` to `.env` and configure the values.
+3. Start the Aqueduct client:
+
+```shell
+docker compose up
+```
 
 ## Usage & Configuration
 
