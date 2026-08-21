@@ -129,6 +129,26 @@ pub fn read_config() -> Result<Config, ConfigError> {
         config.tunnel_disable_certificate_check = args.insecure_tls;
     }
 
+    //  clean up values
+
+    if let Some(user) = config.tunnel_user.as_ref()
+        && user.is_empty()
+    {
+        config.tunnel_user = None;
+    }
+
+    if let Some(password) = config.tunnel_password.as_ref()
+        && password.is_empty()
+    {
+        config.tunnel_password = None;
+    }
+
+    if let Some(token) = config.tunnel_token.as_ref()
+        && token.is_empty()
+    {
+        config.tunnel_token = None;
+    }
+
     if config.tunnel_token.is_none()
         && (config.tunnel_user.is_none() || config.tunnel_password.is_none())
     {

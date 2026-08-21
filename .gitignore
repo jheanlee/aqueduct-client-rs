@@ -4,5 +4,6 @@ target
 
 bin
 lib
+docker/test
 
 .env
