@@ -15,12 +15,6 @@
  */
 
 use rustls::pki_types::ServerName;
-use tokio_util::sync::CancellationToken;
-
-#[derive(Clone)]
-pub struct Flags {
-    pub local_cancellation_token: CancellationToken,
-}
 
 pub struct TunnelConfig {
     pub tunnel_host: ServerName<'static>,

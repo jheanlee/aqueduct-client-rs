@@ -17,10 +17,10 @@ use crate::message::r#type::{Message, MessageType, ProxyMessage};
 use crate::message::v1::common::MESSAGE_VERSION_V1;
 use crate::tunnel::error::TunnelError;
 use crate::tunnel::message_handler::send_message;
-use crate::tunnel::model::{Flags, Shared};
+use crate::tunnel::model::Shared;
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
-use bytes::BytesMut;
+use bytes::{Bytes, BytesMut};
 use hmac::{Hmac, KeyInit, Mac};
 use rustls::pki_types::ServerName;
 use sha2::Sha256;
@@ -28,22 +28,25 @@ use socket2::SockRef;
 use std::io::ErrorKind;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::io::copy_bidirectional_with_sizes;
 use tokio::net::TcpStream;
 use tokio::select;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
+use tokio::time::timeout;
 use tokio_rustls::TlsConnector;
 use tokio_rustls::client::TlsStream;
 use tokio_util::codec::LengthDelimitedCodec;
 use tokio_util::future::FutureExt;
-use tracing::{debug, error, instrument, warn};
+use tokio_util::sync::CancellationToken;
+use tracing::{debug, instrument, warn};
 
 ///   Controls all proxy threads, connects to service for each tunnelled external user
 pub async fn tunnel_proxy_control(
-    flags: Flags,
+    cancellation_token: CancellationToken,
     shared: Arc<Shared>,
-    secret: String,
+    secret: Bytes,
     tunnel_server_control_addr: SocketAddr,
     mut redirect_id_rx: mpsc::Receiver<String>,
 ) {
@@ -52,18 +55,18 @@ pub async fn tunnel_proxy_control(
     loop {
         select! {
             biased;
-            _ = flags.local_cancellation_token.cancelled() => {
+            _ = cancellation_token.cancelled() => {
                 break;
             },
             _ = proxy_threads.join_next(), if !proxy_threads.is_empty() => {},
             redirect_id = redirect_id_rx.recv() => {
                 let Some(redirect_id) = redirect_id else {
-                    flags.local_cancellation_token.cancel();
+                    cancellation_token.cancel();
                     break;
                 };
                 proxy_threads.spawn(
                     tunnel_proxy_session(
-                        flags.clone(),
+                        cancellation_token.child_token(),
                         shared.clone(),
                         secret.clone(),
                         tunnel_server_control_addr,
@@ -73,6 +76,8 @@ pub async fn tunnel_proxy_control(
             }
         }
     }
+
+    let _ = timeout(Duration::from_secs(60), proxy_threads.join_all()).await;
 }
 
 #[instrument(
@@ -87,9 +92,9 @@ pub async fn tunnel_proxy_control(
     )
 )]
 pub async fn tunnel_proxy_session(
-    flags: Flags,
+    cancellation_token: CancellationToken,
     shared: Arc<Shared>,
-    secret: String,
+    secret: Bytes,
     tunnel_server_control_addr: SocketAddr,
     redirect_id: String,
 ) {
@@ -130,15 +135,10 @@ pub async fn tunnel_proxy_session(
     };
 
     //  hash
-    let Ok(secret) = BASE64_STANDARD.decode(secret) else {
-        error!("Received invalid secret from the server");
-        flags.local_cancellation_token.cancel();
-        return;
-    };
     let mut hmac: Hmac<Sha256> =
-        Hmac::new_from_slice(secret.as_slice()).expect("Hmac does not require key size");
+        Hmac::new_from_slice(secret.as_ref()).expect("Hmac does not require key size");
     hmac.update(redirect_id.as_bytes());
-    let id_hash = BASE64_STANDARD.encode(hmac.finalize().into_bytes());
+    let id_hash = BASE64_STANDARD.encode(hmac.finalize().as_bytes());
 
     //  proxy message (claim external client)
     //  temporarily change tunnel_server_stream into framed
@@ -162,14 +162,14 @@ pub async fn tunnel_proxy_session(
             &mut tunnel_server_stream,
             &mut buffer,
             &message,
-            flags.local_cancellation_token.clone(),
+            &cancellation_token,
         )
         .await
     }
     .await
     {
         warn!("Unable to send request to the tunnel server: {:?}", error);
-        flags.local_cancellation_token.cancel();
+        cancellation_token.cancel();
         return;
     }
 
@@ -196,7 +196,7 @@ pub async fn tunnel_proxy_session(
         BUFFER_SIZE,
         BUFFER_SIZE,
     )
-    .with_cancellation_token_owned(flags.local_cancellation_token);
+    .with_cancellation_token(&cancellation_token);
 
     match io_copy.await {
         Some(Ok(_)) => { /* gracefully closed by either service or client */ }

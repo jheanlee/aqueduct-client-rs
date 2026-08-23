@@ -25,7 +25,7 @@ pub async fn send_message<T>(
     writer: &mut T,
     buffer: &mut BytesMut,
     message: &Message,
-    cancellation_token: CancellationToken,
+    cancellation_token: &CancellationToken,
 ) -> Result<(), TunnelError>
 where
     T: Sink<Bytes, Error = std::io::Error> + Unpin,
@@ -34,7 +34,7 @@ where
 
     writer
         .send(buffer.split().freeze())
-        .with_cancellation_token_owned(cancellation_token)
+        .with_cancellation_token(cancellation_token)
         .await
         .unwrap_or(Ok(()))?;
     Ok(())
