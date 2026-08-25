@@ -20,21 +20,28 @@ use crate::message::r#type::{
 use crate::message::v1::common::MESSAGE_VERSION_V1;
 use crate::tunnel::error::TunnelError;
 use crate::tunnel::message_handler::send_message;
-use crate::tunnel::model::{Flags, Shared};
+use crate::tunnel::model::Shared;
 use crate::tunnel::proxy::tunnel_proxy_control;
-use futures::StreamExt;
+use base64::Engine;
+use base64::prelude::BASE64_STANDARD;
+use futures::{SinkExt, StreamExt};
+use std::io::ErrorKind;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
+use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use tokio::select;
 use tokio::sync::mpsc;
+use tokio::time::timeout;
 use tokio_rustls::client::TlsStream;
 use tokio_util::bytes::BytesMut;
 use tokio_util::codec::LengthDelimitedCodec;
-use tracing::{debug, error, info, warn};
+use tokio_util::sync::CancellationToken;
+use tracing::{debug, error, info};
 
 pub async fn tunnel_client_control(
-    flags: Flags,
+    cancellation_token: CancellationToken,
     shared: Arc<Shared>,
     tunnel_server_control_addr: SocketAddr,
     tunnel_server_control_stream: TlsStream<TcpStream>,
@@ -79,12 +86,12 @@ pub async fn tunnel_client_control(
             &mut tunnel_service_control_writer,
             &mut write_buffer,
             &auth_message,
-            flags.local_cancellation_token.clone(),
+            &cancellation_token,
         )
         .await
         {
             error!("Unable to send request to the server: {:?}", error);
-            flags.local_cancellation_token.cancel();
+            cancellation_token.cancel();
         }
     } else if let (Some(username), Some(password)) = (auth_username, auth_password) {
         let auth_message = Message::new(
@@ -101,15 +108,15 @@ pub async fn tunnel_client_control(
             &mut tunnel_service_control_writer,
             &mut write_buffer,
             &auth_message,
-            flags.local_cancellation_token.clone(),
+            &cancellation_token,
         )
         .await
         {
             error!("Unable to send request to the server: {:?}", error);
-            flags.local_cancellation_token.cancel();
+            cancellation_token.cancel();
         }
     } else {
-        flags.local_cancellation_token.cancel();
+        cancellation_token.cancel();
         return;
     }
 
@@ -132,7 +139,7 @@ pub async fn tunnel_client_control(
 
         select! {
             biased;
-            _local_cancelled = flags.local_cancellation_token.cancelled() => {
+            _local_cancelled = cancellation_token.cancelled() => {
                 break;
             }
             result = read_future => {
@@ -143,30 +150,36 @@ pub async fn tunnel_client_control(
                                 let heartbeat_message = Message::new(MESSAGE_VERSION_V1, MessageType::Heartbeat, "");
                                 debug!("Heartbeat sent");
 
-                                if let Err(error) = send_message(&mut tunnel_service_control_writer, &mut write_buffer, &heartbeat_message, flags.local_cancellation_token.clone()).await {
+                                if let Err(error) = send_message(
+                                    &mut tunnel_service_control_writer,
+                                    &mut write_buffer,
+                                    &heartbeat_message,
+                                    &cancellation_token.clone()
+                                ).await {
                                     error!("Unable to send request to the server: {:?}", error);
-                                    flags.local_cancellation_token.cancel();
                                     break;
                                 }
                             }
                             MessageType::Service => {
                                 //  validation and parsing
                                 let Ok(payload_str) = str::from_utf8(&message.message_payload) else {
-                                    warn!("Received malformed message from the server");
-                                    flags.local_cancellation_token.cancel();
+                                    error!("Received malformed message from the server");
                                     break;
                                 };
 
                                 let Ok(service_message) = serde_json::from_str::<ClientServiceMessage>(payload_str) else {
-                                    warn!("Received malformed message from the server");
-                                    flags.local_cancellation_token.cancel();
+                                    error!("Received malformed message from the server");
+                                    break;
+                                };
+
+                                let Ok(secret) = BASE64_STANDARD.decode(service_message.secret) else {
+                                    error!("Received invalid secret from the server");
                                     break;
                                 };
 
                                 //  port opened, spawn tasks
                                 let Some(redirect_id_rx) = redirect_id_rx.take() else {
-                                    warn!("Received malformed message from the server");
-                                    flags.local_cancellation_token.cancel();
+                                    error!("Received malformed message from the server");
                                     break;
                                 };
 
@@ -179,9 +192,9 @@ pub async fn tunnel_client_control(
                                 );
 
                                 proxy_control_task = Some(tokio::spawn(tunnel_proxy_control(
-                                    flags.clone(),
+                                    cancellation_token.clone(),
                                     shared.clone(),
-                                    service_message.secret,
+                                    secret.into(),
                                     tunnel_server_control_addr,
                                     redirect_id_rx,
                                 )));
@@ -189,34 +202,39 @@ pub async fn tunnel_client_control(
                             MessageType::Proxy => {
                                 //  validation and parsing
                                 let Ok(payload_str) = str::from_utf8(&message.message_payload) else {
-                                    warn!("Received malformed message from the server");
-                                    flags.local_cancellation_token.cancel();
+                                    error!("Received malformed message from the server");
                                     break;
                                 };
 
                                 //  send new id to task
                                 debug!("Tunnel external user id received: {}", payload_str);
+
                                 if let Err(error) = redirect_id_tx.send(payload_str.to_string()).await {
-                                    error_general(flags.clone(), error).await;
+                                    error_general(&cancellation_token, error).await;
                                 }
                             }
                             MessageType::Close => {
-                                flags.local_cancellation_token.cancel();
+                                info!("Received control close message");
                                 break;
                             }
                             MessageType::Empty => {
                                 //  placeholder
                             }
                             MessageType::Error => {
-                                error!("Control connection with the server closed with an error: {}", str::from_utf8(&message.message_payload).unwrap_or("Invalid string"));
-                                flags.local_cancellation_token.cancel();
+                                error!("Control connection terminated: {}", str::from_utf8(&message.message_payload).unwrap_or("Invalid string"));
                                 break;
                             }
                         }
                     }
                     Err(error) => {
-                        error!("Control connection with the server closed with an error: {:?}", error);
-                        flags.local_cancellation_token.cancel();
+                        match error {
+                            TunnelError::IoError(error) if matches!(error.kind(), ErrorKind::BrokenPipe | ErrorKind::ConnectionReset | ErrorKind::UnexpectedEof) => {
+                                info!("Control connection terminated: {}", error.kind());
+                            }
+                            _ => {
+                                error!("Control connection terminated: {:?}", error);
+                            }
+                        }
                         break;
                     }
                 }
@@ -224,14 +242,37 @@ pub async fn tunnel_client_control(
         }
     }
 
+    cancellation_token.cancel();
+    info!("Shutting down");
+
+    let _ = timeout(
+        Duration::from_millis(1000),
+        send_message(
+            &mut tunnel_service_control_writer,
+            &mut write_buffer,
+            &Message::new(MESSAGE_VERSION_V1, MessageType::Close, ""),
+            &cancellation_token.clone(),
+        ),
+    )
+    .await;
+
+    let _ = tunnel_service_control_writer.flush().await;
+    let mut stream = tunnel_service_control_reader
+        .reunite(tunnel_service_control_writer)
+        .expect("`tunnel_service_control_reader` and `tunnel_service_control_writer` must be corresponding halves")
+        .into_inner();
+    let _ = stream.shutdown().await;
+    drop(stream);
+
     if let Some(proxy_control_task) = proxy_control_task {
         let _ = proxy_control_task.await;
+        info!("Tunnel closed");
     }
 
-    info!("Control connection with the server closed");
+    info!("Control connection closed");
 }
 
-async fn error_general(flags: Flags, error: impl std::fmt::Debug) {
+async fn error_general(cancellation_token: &CancellationToken, error: impl std::fmt::Debug) {
     error!("An error has occurred: {:?}", error);
-    flags.local_cancellation_token.cancel();
+    cancellation_token.cancel();
 }
