@@ -202,13 +202,7 @@ pub async fn tunnel_proxy_session(
         Some(Ok(_)) => { /* gracefully closed by either service or client */ }
         Some(Err(error)) => {
             match error.kind() {
-                ErrorKind::BrokenPipe => {
-                    //  often occurs under normal circumstances
-                }
-                ErrorKind::ConnectionReset => {
-                    //  often occurs under normal circumstances
-                }
-                ErrorKind::UnexpectedEof => {
+                ErrorKind::BrokenPipe | ErrorKind::ConnectionReset | ErrorKind::UnexpectedEof => {
                     //  often occurs under normal circumstances
                 }
                 _ => {
