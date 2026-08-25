@@ -34,9 +34,12 @@ mod message;
 mod tunnel;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+async fn main() {
     let _ = dotenv::dotenv();
-    let config = read_config().expect("ConfigError");
+    let config = read_config().unwrap_or_else(|error| {
+        println!("{}", error);
+        exit(1);
+    });
     let cancellation_token = CancellationToken::new();
 
     //  log
@@ -52,9 +55,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>
 
     //  TLS
     let mut root_cert_store = rustls::RootCertStore::empty();
-    for cert in rustls_native_certs::load_native_certs().expect("Unable to load certificates") {
-        root_cert_store.add(cert)?;
-    }
+    root_cert_store.add_parsable_certificates(rustls_native_certs::load_native_certs().certs);
 
     let mut tls_config = rustls::ClientConfig::builder()
         .with_root_certificates(root_cert_store)
@@ -87,7 +88,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>
         exit(1);
     });
 
-    let tunnel_server_addr = tcp_stream.peer_addr()?;
+    let tunnel_server_addr = tcp_stream.peer_addr().unwrap_or_else(|error| {
+        error!("Unable to connect to the server: {:?}", error);
+        exit(1);
+    });
     let tls_stream = tls_connector
         .connect(config.tunnel_host.clone(), tcp_stream)
         .await
@@ -119,6 +123,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>
     let _ = signal_handler_task.await;
 
     info!("Shutdown complete");
-
-    Ok(())
 }
