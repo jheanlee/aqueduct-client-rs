@@ -19,7 +19,6 @@ use crate::tunnel::control::tunnel_client_control;
 use crate::tunnel::model::{Shared, TunnelConfig};
 use crate::tunnel::tls::DisableCertVerification;
 use socket2::SockRef;
-use std::process::exit;
 use std::sync::Arc;
 use tokio::net::TcpStream;
 use tokio_rustls::TlsConnector;
@@ -34,12 +33,11 @@ mod message;
 mod tunnel;
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
     let _ = dotenv::dotenv();
-    let config = read_config().unwrap_or_else(|error| {
+    let config = read_config().inspect_err(|error| {
         println!("{}", error);
-        exit(1);
-    });
+    })?;
     let cancellation_token = CancellationToken::new();
 
     //  log
@@ -77,28 +75,24 @@ async fn main() {
         config.tunnel_host_port,
     ))
     .await
-    .unwrap_or_else(|error| {
+    .inspect_err(|error| {
         error!("Unable to connect to the server: {:?}", error);
-        exit(1);
-    });
+    })?;
 
     let socket_ref = SockRef::from(&tcp_stream);
-    socket_ref.set_tcp_nodelay(true).unwrap_or_else(|error| {
+    socket_ref.set_tcp_nodelay(true).inspect_err(|error| {
         error!("Unable to configure the control connection: {:?}", error);
-        exit(1);
-    });
+    })?;
 
-    let tunnel_server_addr = tcp_stream.peer_addr().unwrap_or_else(|error| {
+    let tunnel_server_addr = tcp_stream.peer_addr().inspect_err(|error| {
         error!("Unable to connect to the server: {:?}", error);
-        exit(1);
-    });
+    })?;
     let tls_stream = tls_connector
         .connect(config.tunnel_host.clone(), tcp_stream)
         .await
-        .unwrap_or_else(|error| {
+        .inspect_err(|error| {
             error!("Unable to connect to the server: {:?}", error);
-            exit(1);
-        });
+        })?;
 
     let shared = Arc::new(Shared {
         tls_config,
@@ -123,4 +117,5 @@ async fn main() {
     let _ = signal_handler_task.await;
 
     info!("Shutdown complete");
+    Ok(())
 }
